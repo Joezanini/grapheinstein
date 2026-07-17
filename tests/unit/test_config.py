@@ -15,6 +15,37 @@ def test_defaults_without_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert cfg.llm_confidence_threshold == 0.5
     assert cfg.compress is False
     assert cfg.versioned is False
+    assert cfg.explain_hops == 2
+    assert cfg.explain_top_n == 3
+    assert cfg.explain_match_threshold == 0.55
+    assert cfg.explain_node_cap == 500
+
+
+def test_explain_config_keys_and_override(tmp_path: Path):
+    cfg_file = tmp_path / "c.yaml"
+    cfg_file.write_text(
+        "explain_hops: 1\n"
+        "explain_top_n: 5\n"
+        "explain_match_threshold: 0.7\n"
+        "explain_node_cap: 100\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(config_path=cfg_file)
+    assert cfg.explain_hops == 1
+    assert cfg.explain_top_n == 5
+    assert cfg.explain_match_threshold == 0.7
+    assert cfg.explain_node_cap == 100
+    cfg2 = load_config(
+        config_path=cfg_file,
+        explain_hops_override=2,
+        explain_top_n_override=4,
+        explain_match_threshold_override=0.6,
+        explain_node_cap_override=50,
+    )
+    assert cfg2.explain_hops == 2
+    assert cfg2.explain_top_n == 4
+    assert cfg2.explain_match_threshold == 0.6
+    assert cfg2.explain_node_cap == 50
 
 
 def test_compress_versioned_config_and_override(tmp_path: Path):

@@ -1,0 +1,105 @@
+{
+  "schema_version": "6.0.0",
+  "directed": true,
+  "multigraph": false,
+  "graph": {
+    "project_root": "/projects/explain-fixture",
+    "generated_at": "2026-07-17T00:00:00Z"
+  },
+  "nodes": [
+    {
+      "id": ".",
+      "type": "dir",
+      "metadata": {}
+    },
+    {
+      "id": "auth.py",
+      "type": "file",
+      "metadata": {}
+    },
+    {
+      "id": "middleware/helpers.py",
+      "type": "file",
+      "metadata": {}
+    },
+    {
+      "id": "auth.py::check_auth",
+      "type": "function",
+      "metadata": {
+        "name": "check_auth",
+        "language": "python",
+        "file": "auth.py",
+        "start_line": 10
+      }
+    },
+    {
+      "id": "concept::auth",
+      "type": "concept",
+      "metadata": {
+        "name": "Auth",
+        "kind": "domain_term"
+      }
+    },
+    {
+      "id": "concept::authentication",
+      "type": "concept",
+      "metadata": {
+        "name": "Authentication",
+        "kind": "domain_term"
+      }
+    },
+    {
+      "id": "unrelated.py",
+      "type": "file",
+      "metadata": {}
+    }
+  ],
+  "links": [
+    {
+      "source": ".",
+      "target": "auth.py",
+      "type": "contains",
+      "provenance": "extracted"
+    },
+    {
+      "source": ".",
+      "target": "middleware/helpers.py",
+      "type": "contains",
+      "provenance": "extracted"
+    },
+    {
+      "source": ".",
+      "target": "unrelated.py",
+      "type": "contains",
+      "provenance": "extracted"
+    },
+    {
+      "source": "auth.py",
+      "target": "auth.py::check_auth",
+      "type": "defines",
+      "provenance": "extracted"
+    },
+    {
+      "source": "auth.py::check_auth",
+      "target": "concept::auth",
+      "type": "implements",
+      "provenance": "inferred",
+      "confidence": 0.9,
+      "evidence": "check_auth implements Auth"
+    },
+    {
+      "source": "auth.py",
+      "target": "middleware/helpers.py",
+      "type": "references",
+      "provenance": "extracted"
+    },
+    {
+      "source": "auth.py::check_auth",
+      "target": "concept::authentication",
+      "type": "implements",
+      "provenance": "inferred",
+      "confidence": 0.8,
+      "evidence": "related authentication concept"
+    }
+  ]
+}

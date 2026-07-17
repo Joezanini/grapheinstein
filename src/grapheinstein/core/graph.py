@@ -477,6 +477,21 @@ def ensure_directory_chain(graph: nx.DiGraph, relative_dir: str) -> None:
         parent = current
 
 
+def artifact_to_digraph(artifact: dict[str, Any]) -> nx.DiGraph:
+    """Convert a validated node-link artifact dict into a NetworkX DiGraph."""
+    graph = json_graph.node_link_graph(artifact, directed=True, edges="links")
+    # Ensure node attrs use type/metadata shape used elsewhere
+    for node_id, attrs in graph.nodes(data=True):
+        if "metadata" not in attrs or attrs["metadata"] is None:
+            attrs["metadata"] = {}
+        if not isinstance(attrs["metadata"], dict):
+            attrs["metadata"] = {}
+    gmeta = artifact.get("graph") if isinstance(artifact.get("graph"), dict) else {}
+    for key, value in gmeta.items():
+        graph.graph[key] = value
+    return graph
+
+
 def to_artifact_dict(graph: nx.DiGraph) -> dict[str, Any]:
     data = json_graph.node_link_data(graph, edges="links")
     data["schema_version"] = SCHEMA_VERSION
@@ -529,6 +544,18 @@ def to_artifact_dict(graph: nx.DiGraph) -> dict[str, Any]:
         graph_meta["llm_model"] = str(graph.graph["llm_model"])
     if "parse_skips" in graph.graph:
         graph_meta["parse_skips"] = int(graph.graph["parse_skips"] or 0)
+    if graph.graph.get("explained_concept"):
+        graph_meta["explained_concept"] = str(graph.graph["explained_concept"])
+    if graph.graph.get("explain_match_ids") is not None:
+        graph_meta["explain_match_ids"] = list(graph.graph["explain_match_ids"])
+    if "explain_hops" in graph.graph:
+        graph_meta["explain_hops"] = int(graph.graph["explain_hops"])
+    if "explain_truncated" in graph.graph:
+        graph_meta["explain_truncated"] = bool(graph.graph["explain_truncated"])
+    if isinstance(graph.graph.get("explain_match_scores"), dict):
+        graph_meta["explain_match_scores"] = {
+            str(k): float(v) for k, v in graph.graph["explain_match_scores"].items()
+        }
     data["graph"] = graph_meta
     return data
 

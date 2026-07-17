@@ -9,6 +9,7 @@ from typing import List, Optional
 import typer
 from rich.table import Table
 
+from grapheinstein.core.explain import ExplainError, NoMatchError, explain_concept
 from grapheinstein.core.graph import GraphError, load_artifact, stats_from_artifact
 from grapheinstein.core.index import MediaExtrasError, index_project
 from grapheinstein.core.merge import MergeConflictError, merge_paths
@@ -28,7 +29,7 @@ cli = typer.Typer(
     add_completion=False,
 )
 
-_KNOWN_COMMANDS = frozenset({"index", "status", "visualize", "merge"})
+_KNOWN_COMMANDS = frozenset({"index", "status", "visualize", "merge", "explain"})
 _OPTS_WITH_VALUE = frozenset(
     {
         "--output",
@@ -40,6 +41,9 @@ _OPTS_WITH_VALUE = frozenset(
         "--languages",
         "--llm-model",
         "--llm-base-url",
+        "--hops",
+        "--top-n",
+        "--match-threshold",
     }
 )
 
@@ -370,6 +374,121 @@ def status_cmd(
     if stats.project_root:
         table.add_row("Project root", stats.project_root)
     console.print(table)
+
+
+@cli.command("explain")
+def explain_cmd(
+    concept: str = typer.Argument(..., help="Concept phrase to match in the graph"),
+    input_path: Path = typer.Option(
+        ...,
+        "--input",
+        "-i",
+        help="Path to existing graph.json artifact",
+    ),
+    output_path: Path = typer.Option(
+        ...,
+        "--output",
+        "-o",
+        help="Destination path for explanation subgraph",
+    ),
+    hops: Optional[int] = typer.Option(
+        None,
+        "--hops",
+        help="Undirected neighborhood radius (1 or 2)",
+    ),
+    top_n: Optional[int] = typer.Option(
+        None,
+        "--top-n",
+        help="Maximum primary matches to include",
+    ),
+    match_threshold: Optional[float] = typer.Option(
+        None,
+        "--match-threshold",
+        help="Minimum match score in [0.0, 1.0]",
+    ),
+    llm_model: Optional[str] = typer.Option(
+        None,
+        "--llm-model",
+        help="Local Ollama model for summary (and embeddings when used)",
+    ),
+    llm_base_url: Optional[str] = typer.Option(
+        None,
+        "--llm-base-url",
+        help="Local Ollama base URL",
+    ),
+    no_summary: bool = typer.Option(
+        False,
+        "--no-summary",
+        help="Skip local LLM summary; still write subgraph",
+    ),
+    config: Optional[Path] = typer.Option(
+        None,
+        "--config",
+        help="YAML config file (overrides ~/.grapheinstein/config.yaml)",
+    ),
+) -> None:
+    """Find concept nodes, write a neighborhood subgraph, and summarize with a local LLM."""
+    try:
+        cfg = load_config(
+            config_path=config,
+            llm_model_override=llm_model,
+            llm_base_url_override=llm_base_url,
+            explain_hops_override=hops,
+            explain_top_n_override=top_n,
+            explain_match_threshold_override=match_threshold,
+        )
+    except ConfigError as exc:
+        _fail(str(exc), 1)
+
+    setup_logging(cfg.log_level)
+
+    try:
+        result = explain_concept(
+            concept,
+            input_path,
+            output_path,
+            hops=cfg.explain_hops,
+            top_n=cfg.explain_top_n,
+            match_threshold=cfg.explain_match_threshold,
+            node_cap=cfg.explain_node_cap,
+            want_summary=not no_summary,
+            llm_model=cfg.llm_model,
+            llm_base_url=cfg.llm_base_url,
+        )
+    except NoMatchError as exc:
+        _fail(str(exc), 1)
+    except ExplainError as exc:
+        _fail(str(exc), 1)
+    except FileNotFoundError as exc:
+        _fail(str(exc), 1)
+    except GraphError as exc:
+        _fail(str(exc), 1)
+    except OSError as exc:
+        _fail(str(exc), 1)
+
+    table = Table(title="Explain complete", show_header=True, header_style="bold")
+    table.add_column("Metric")
+    table.add_column("Value")
+    table.add_row("Concept", concept.strip())
+    table.add_row("Matches", ", ".join(result.match_ids))
+    table.add_row("Hops", str(result.hops))
+    table.add_row("Truncated", "yes" if result.truncated else "no")
+    table.add_row("Output", str(result.output_path))
+    table.add_row("Summary", result.summary_status)
+    console.print(table)
+
+    if result.embed_note:
+        console.print(f"[yellow]{result.embed_note}[/yellow]")
+    if result.truncated:
+        console.print(
+            "[yellow]Neighborhood truncated to explain_node_cap; "
+            "graph.explain_truncated=true[/yellow]"
+        )
+    if result.summary_status == "ok" and result.summary_text:
+        console.print("\n[bold]Summary[/bold]")
+        console.print(result.summary_text)
+    elif result.summary_detail:
+        console.print(f"[yellow]{result.summary_detail}[/yellow]")
 
 
 @cli.command("visualize")

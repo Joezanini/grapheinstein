@@ -165,6 +165,68 @@ def chat(
     return parsed
 
 
+def chat_text(
+    *,
+    model: str,
+    user_content: str,
+    base_url: str = DEFAULT_BASE_URL,
+    system: str = "",
+    timeout: float = 120.0,
+) -> str:
+    """
+    Call Ollama POST /api/chat without structured format.
+    Returns plain assistant text (for explain summaries).
+    """
+    url = base_url.rstrip("/") + "/api/chat"
+    messages: list[dict[str, str]] = []
+    if system.strip():
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": user_content})
+    body: dict[str, Any] = {
+        "model": model,
+        "stream": False,
+        "messages": messages,
+    }
+    payload = _request_json("POST", url, body=body, timeout=timeout)
+    if not isinstance(payload, dict):
+        raise OllamaError("Ollama chat response was not an object")
+    message = payload.get("message") or {}
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, str) or not content.strip():
+        raise OllamaError("Ollama chat returned empty message content")
+    return content.strip()
+
+
+def embed_texts(
+    texts: list[str],
+    *,
+    model: str,
+    base_url: str = DEFAULT_BASE_URL,
+    timeout: float = 120.0,
+) -> list[list[float]]:
+    """
+    Embed texts via Ollama POST /api/embeddings (one request per text).
+    Raises OllamaError on failure so callers can soft-skip.
+    """
+    if not texts:
+        return []
+    url = base_url.rstrip("/") + "/api/embeddings"
+    vectors: list[list[float]] = []
+    for text in texts:
+        body = {"model": model, "prompt": text}
+        payload = _request_json("POST", url, body=body, timeout=timeout)
+        if not isinstance(payload, dict):
+            raise OllamaError("Ollama embeddings response was not an object")
+        embedding = payload.get("embedding")
+        if not isinstance(embedding, list) or not embedding:
+            raise OllamaError("Ollama embeddings returned empty embedding")
+        try:
+            vectors.append([float(x) for x in embedding])
+        except (TypeError, ValueError) as exc:
+            raise OllamaError(f"Ollama embedding values must be numeric: {exc}") from exc
+    return vectors
+
+
 def check_ready(
     *,
     model: str,
@@ -204,7 +266,9 @@ __all__ = [
     "OllamaError",
     "SYSTEM_PROMPT",
     "chat",
+    "chat_text",
     "check_ready",
+    "embed_texts",
     "list_models",
     "model_available",
 ]

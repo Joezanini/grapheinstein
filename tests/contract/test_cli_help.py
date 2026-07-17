@@ -11,6 +11,15 @@ def test_help_lists_index_and_status():
     assert "index" in result.output
     assert "status" in result.output
     assert "merge" in result.output
+    assert "explain" in result.output
+
+
+def test_explain_help_lists_key_options():
+    result = runner.invoke(cli, ["explain", "--help"])
+    assert result.exit_code == 0
+    assert "--input" in result.output
+    assert "--output" in result.output
+    assert "--hops" in result.output
 
 
 def test_index_help_lists_enrich_llm_flags():

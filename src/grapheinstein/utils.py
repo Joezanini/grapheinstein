@@ -25,6 +25,12 @@ USER_CONFIG_PATH = Path.home() / ".grapheinstein" / "config.yaml"
 console = Console(stderr=True)
 
 
+DEFAULT_EXPLAIN_HOPS = 2
+DEFAULT_EXPLAIN_TOP_N = 3
+DEFAULT_EXPLAIN_MATCH_THRESHOLD = 0.55
+DEFAULT_EXPLAIN_NODE_CAP = 500
+
+
 @dataclass(frozen=True)
 class AppConfig:
     output: str = DEFAULT_OUTPUT
@@ -35,6 +41,10 @@ class AppConfig:
     llm_confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD
     compress: bool = False
     versioned: bool = False
+    explain_hops: int = DEFAULT_EXPLAIN_HOPS
+    explain_top_n: int = DEFAULT_EXPLAIN_TOP_N
+    explain_match_threshold: float = DEFAULT_EXPLAIN_MATCH_THRESHOLD
+    explain_node_cap: int = DEFAULT_EXPLAIN_NODE_CAP
 
 
 class ConfigError(Exception):
@@ -83,17 +93,23 @@ def _coerce_languages(raw: Any, *, source: Path | None) -> list[str]:
         raise ConfigError(str(exc)) from exc
 
 
-def _coerce_threshold(raw: Any, *, source: Path | None) -> float:
+def _coerce_threshold(raw: Any, *, key: str, source: Path | None) -> float:
     try:
         value = float(raw)
     except (TypeError, ValueError) as exc:
-        raise ConfigError(
-            f"Config key 'llm_confidence_threshold' must be a number ({source})"
-        ) from exc
+        raise ConfigError(f"Config key {key!r} must be a number ({source})") from exc
     if value < 0.0 or value > 1.0:
-        raise ConfigError(
-            f"Config key 'llm_confidence_threshold' must be in [0.0, 1.0] ({source})"
-        )
+        raise ConfigError(f"Config key {key!r} must be in [0.0, 1.0] ({source})")
+    return value
+
+
+def _coerce_positive_int(raw: Any, *, key: str, source: Path | None) -> int:
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"Config key {key!r} must be an integer ({source})") from exc
+    if value < 1:
+        raise ConfigError(f"Config key {key!r} must be >= 1 ({source})")
     return value
 
 
@@ -113,6 +129,10 @@ def _coerce_config(raw: dict[str, Any], *, source: Path | None) -> dict[str, Any
         "llm_confidence_threshold",
         "compress",
         "versioned",
+        "explain_hops",
+        "explain_top_n",
+        "explain_match_threshold",
+        "explain_node_cap",
     }
     unknown = set(raw) - known
     for key in sorted(unknown):
@@ -141,12 +161,33 @@ def _coerce_config(raw: dict[str, Any], *, source: Path | None) -> dict[str, Any
         result["llm_base_url"] = raw["llm_base_url"].strip().rstrip("/")
     if "llm_confidence_threshold" in raw:
         result["llm_confidence_threshold"] = _coerce_threshold(
-            raw["llm_confidence_threshold"], source=source
+            raw["llm_confidence_threshold"],
+            key="llm_confidence_threshold",
+            source=source,
         )
     if "compress" in raw:
         result["compress"] = _coerce_bool(raw["compress"], key="compress", source=source)
     if "versioned" in raw:
         result["versioned"] = _coerce_bool(raw["versioned"], key="versioned", source=source)
+    if "explain_hops" in raw:
+        hops = _coerce_positive_int(raw["explain_hops"], key="explain_hops", source=source)
+        if hops not in (1, 2):
+            raise ConfigError(f"Config key 'explain_hops' must be 1 or 2 ({source})")
+        result["explain_hops"] = hops
+    if "explain_top_n" in raw:
+        result["explain_top_n"] = _coerce_positive_int(
+            raw["explain_top_n"], key="explain_top_n", source=source
+        )
+    if "explain_match_threshold" in raw:
+        result["explain_match_threshold"] = _coerce_threshold(
+            raw["explain_match_threshold"],
+            key="explain_match_threshold",
+            source=source,
+        )
+    if "explain_node_cap" in raw:
+        result["explain_node_cap"] = _coerce_positive_int(
+            raw["explain_node_cap"], key="explain_node_cap", source=source
+        )
     return result
 
 
@@ -159,6 +200,10 @@ def load_config(
     llm_base_url_override: str | None = None,
     compress_override: bool | None = None,
     versioned_override: bool | None = None,
+    explain_hops_override: int | None = None,
+    explain_top_n_override: int | None = None,
+    explain_match_threshold_override: float | None = None,
+    explain_node_cap_override: int | None = None,
     user_config_path: Path | None = None,
 ) -> AppConfig:
     """
@@ -174,6 +219,10 @@ def load_config(
         "llm_confidence_threshold": DEFAULT_CONFIDENCE_THRESHOLD,
         "compress": False,
         "versioned": False,
+        "explain_hops": DEFAULT_EXPLAIN_HOPS,
+        "explain_top_n": DEFAULT_EXPLAIN_TOP_N,
+        "explain_match_threshold": DEFAULT_EXPLAIN_MATCH_THRESHOLD,
+        "explain_node_cap": DEFAULT_EXPLAIN_NODE_CAP,
     }
 
     default_user = user_config_path if user_config_path is not None else USER_CONFIG_PATH
@@ -212,6 +261,24 @@ def load_config(
     if versioned_override is not None:
         merged["versioned"] = bool(versioned_override)
 
+    if explain_hops_override is not None:
+        if explain_hops_override not in (1, 2):
+            raise ConfigError("explain_hops must be 1 or 2")
+        merged["explain_hops"] = explain_hops_override
+    if explain_top_n_override is not None:
+        if explain_top_n_override < 1:
+            raise ConfigError("explain_top_n must be >= 1")
+        merged["explain_top_n"] = int(explain_top_n_override)
+    if explain_match_threshold_override is not None:
+        thr = float(explain_match_threshold_override)
+        if thr < 0.0 or thr > 1.0:
+            raise ConfigError("explain_match_threshold must be in [0.0, 1.0]")
+        merged["explain_match_threshold"] = thr
+    if explain_node_cap_override is not None:
+        if explain_node_cap_override < 1:
+            raise ConfigError("explain_node_cap must be >= 1")
+        merged["explain_node_cap"] = int(explain_node_cap_override)
+
     return AppConfig(
         output=merged["output"],
         log_level=merged["log_level"],
@@ -221,6 +288,10 @@ def load_config(
         llm_confidence_threshold=float(merged["llm_confidence_threshold"]),
         compress=bool(merged["compress"]),
         versioned=bool(merged["versioned"]),
+        explain_hops=int(merged["explain_hops"]),
+        explain_top_n=int(merged["explain_top_n"]),
+        explain_match_threshold=float(merged["explain_match_threshold"]),
+        explain_node_cap=int(merged["explain_node_cap"]),
     )
 
 
