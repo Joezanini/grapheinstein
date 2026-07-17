@@ -70,12 +70,15 @@ def _print_index_summary(stats, output_path: Path) -> None:
     table.add_row("Functions", str(stats.function_count))
     table.add_row("Classes", str(stats.class_count))
     table.add_row("Methods", str(stats.method_count))
+    table.add_row("Headings", str(stats.heading_count))
     table.add_row("Total nodes", str(stats.total_nodes))
     table.add_row("Contains edges", str(stats.contains_count))
     table.add_row("References edges", str(stats.references_count))
     table.add_row("Defines edges", str(stats.defines_count))
     table.add_row("Imports edges", str(stats.imports_count))
     table.add_row("Calls edges", str(stats.calls_count))
+    table.add_row("Section-of edges", str(stats.section_of_count))
+    table.add_row("Mentions edges", str(stats.mentions_count))
     if stats.parse_skips:
         table.add_row("Parse skips", str(stats.parse_skips))
     table.add_row("Output", str(output_path))
@@ -88,6 +91,8 @@ def _run_index(
     output: Optional[Path],
     config: Optional[Path],
     languages: Optional[str],
+    include_docs: bool,
+    include_pdfs: bool,
 ) -> None:
     languages_override = None
     if languages is not None:
@@ -113,6 +118,8 @@ def _run_index(
             project_path,
             output_path,
             languages=list(cfg.languages),
+            include_docs=include_docs,
+            include_pdfs=include_pdfs,
         )
     except FileNotFoundError as exc:
         _fail(str(exc), 1)
@@ -140,6 +147,16 @@ def index_cmd(
         "--languages",
         help="Comma-separated languages for structure extraction (default: all)",
     ),
+    include_docs: bool = typer.Option(
+        False,
+        "--include-docs",
+        help="Enable Markdown/TXT/RST heading and link structure enrichment",
+    ),
+    include_pdfs: bool = typer.Option(
+        False,
+        "--include-pdfs",
+        help="Enable PDF text extraction and section chunk enrichment",
+    ),
     config: Optional[Path] = typer.Option(
         None,
         "--config",
@@ -147,7 +164,14 @@ def index_cmd(
     ),
 ) -> None:
     """Scan a project and write a portable graph.json digraph."""
-    _run_index(project_path, output=output, config=config, languages=languages)
+    _run_index(
+        project_path,
+        output=output,
+        config=config,
+        languages=languages,
+        include_docs=include_docs,
+        include_pdfs=include_pdfs,
+    )
 
 
 @cli.command("status")
@@ -191,12 +215,15 @@ def status_cmd(
     table.add_row("Functions", str(stats.function_count))
     table.add_row("Classes", str(stats.class_count))
     table.add_row("Methods", str(stats.method_count))
+    table.add_row("Headings", str(stats.heading_count))
     table.add_row("Total nodes", str(stats.total_nodes))
     table.add_row("Contains edges", str(stats.contains_count))
     table.add_row("References edges", str(stats.references_count))
     table.add_row("Defines edges", str(stats.defines_count))
     table.add_row("Imports edges", str(stats.imports_count))
     table.add_row("Calls edges", str(stats.calls_count))
+    table.add_row("Section-of edges", str(stats.section_of_count))
+    table.add_row("Mentions edges", str(stats.mentions_count))
     table.add_row("Graph path", stats.graph_path)
     if stats.project_root:
         table.add_row("Project root", stats.project_root)

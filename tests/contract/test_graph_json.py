@@ -11,7 +11,7 @@ def test_graph_json_contract_shape(tmp_path: Path):
     data = to_artifact_dict(graph)
 
     assert data["schema_version"] == SCHEMA_VERSION
-    assert SCHEMA_VERSION == "3.0.0"
+    assert SCHEMA_VERSION == "4.0.0"
     assert data["directed"] is True
     assert data["multigraph"] is False
     assert "project_root" in data["graph"]
@@ -20,7 +20,7 @@ def test_graph_json_contract_shape(tmp_path: Path):
     node_ids = set()
     for node in data["nodes"]:
         assert set(node) >= {"id", "type", "metadata"}
-        assert node["type"] in {"file", "dir", "function", "class", "method"}
+        assert node["type"] in {"file", "dir", "function", "class", "method", "heading"}
         assert isinstance(node["metadata"], dict)
         node_ids.add(node["id"])
 
@@ -31,10 +31,20 @@ def test_graph_json_contract_shape(tmp_path: Path):
     link_types = set()
     for link in data["links"]:
         assert set(link) >= {"source", "target", "type", "provenance"}
-        assert link["type"] in {"contains", "references", "defines", "imports", "calls"}
+        assert link["type"] in {
+            "contains",
+            "references",
+            "defines",
+            "imports",
+            "calls",
+            "section_of",
+            "mentions",
+        }
         assert link["provenance"] in {"extracted", "inferred"}
         assert link["source"] in node_ids
         assert link["target"] in node_ids
         link_types.add(link["type"])
 
     assert "contains" in link_types
+    assert data["graph"].get("include_docs") is False
+    assert data["graph"].get("include_pdfs") is False

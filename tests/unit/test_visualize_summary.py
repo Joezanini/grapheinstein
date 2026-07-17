@@ -5,7 +5,7 @@ from grapheinstein.core.visualize import artifact_to_dot
 
 
 SAMPLE = {
-    "schema_version": "3.0.0",
+    "schema_version": "4.0.0",
     "directed": True,
     "multigraph": False,
     "graph": {"project_root": "/tmp/p", "generated_at": "2026-07-16T00:00:00Z"},
@@ -47,6 +47,9 @@ def test_stats_from_artifact_counts():
     assert stats.contains_count == 2
     assert stats.references_count == 1
     assert stats.defines_count == 1
+    assert stats.heading_count == 0
+    assert stats.section_of_count == 0
+    assert stats.mentions_count == 0
 
 
 def test_artifact_to_dot_includes_nodes_and_edges():

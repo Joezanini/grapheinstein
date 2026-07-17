@@ -1,8 +1,9 @@
-"""NetworkX graph construction and graph.json persistence (schema 3.0.0)."""
+"""NetworkX graph construction and graph.json persistence (schema 4.0.0)."""
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,15 +12,19 @@ from typing import Any
 import networkx as nx
 from networkx.readwrite import json_graph
 
-SCHEMA_VERSION = "3.0.0"
+SCHEMA_VERSION = "4.0.0"
 FILE_DIR_TYPES = frozenset({"file", "dir"})
 CODE_NODE_TYPES = frozenset({"function", "class", "method"})
-NODE_TYPES = FILE_DIR_TYPES | CODE_NODE_TYPES
+HEADING_NODE_TYPE = "heading"
+NODE_TYPES = FILE_DIR_TYPES | CODE_NODE_TYPES | frozenset({HEADING_NODE_TYPE})
 INVENTORY_EDGE_TYPES = frozenset({"contains", "references"})
 CODE_EDGE_TYPES = frozenset({"defines", "imports", "calls"})
-EDGE_TYPES = INVENTORY_EDGE_TYPES | CODE_EDGE_TYPES
+DOC_EDGE_TYPES = frozenset({"section_of", "mentions"})
+EDGE_TYPES = INVENTORY_EDGE_TYPES | CODE_EDGE_TYPES | DOC_EDGE_TYPES
 PROVENANCE_VALUES = frozenset({"extracted", "inferred"})
 CODE_METADATA_REQUIRED = frozenset({"name", "language", "file", "start_line"})
+HEADING_METADATA_REQUIRED = frozenset({"name", "file", "source"})
+HEADING_SOURCES = frozenset({"markdown", "txt", "rst", "pdf"})
 
 
 @dataclass(frozen=True)
@@ -29,12 +34,15 @@ class GraphStats:
     function_count: int
     class_count: int
     method_count: int
+    heading_count: int
     total_nodes: int
     contains_count: int
     references_count: int
     defines_count: int
     imports_count: int
     calls_count: int
+    section_of_count: int
+    mentions_count: int
     project_root: str | None
     graph_path: str
     parse_skips: int = 0
@@ -67,6 +75,15 @@ def code_entity_id(file_id: str, kind: str, name: str, start_line: int) -> str:
     return f"{file_id}::{kind}::{name}::{start_line}"
 
 
+def slugify_heading(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return slug or "untitled"
+
+
+def heading_entity_id(file_id: str, name: str, locator: str) -> str:
+    return f"{file_id}::heading::{slugify_heading(name)}::{locator}"
+
+
 def add_code_entity(
     graph: nx.DiGraph,
     *,
@@ -97,6 +114,59 @@ def add_code_entity(
     return node_id
 
 
+def add_heading(
+    graph: nx.DiGraph,
+    *,
+    file_id: str,
+    name: str,
+    source: str,
+    start_line: int | None = None,
+    page: int | None = None,
+    level: int | None = None,
+    end_line: int | None = None,
+    end_page: int | None = None,
+    locator: str | None = None,
+) -> str:
+    """Add a heading node. Returns node id."""
+    if source not in HEADING_SOURCES:
+        raise ValueError(f"Invalid heading source: {source}")
+    if start_line is None and page is None:
+        raise ValueError("Heading requires start_line and/or page")
+    if locator is None:
+        if start_line is not None:
+            locator = str(int(start_line))
+        else:
+            locator = f"p{int(page)}"
+    node_id = heading_entity_id(file_id, name, locator)
+    # Disambiguate collisions within the same file
+    if node_id in graph and graph.nodes[node_id].get("type") == HEADING_NODE_TYPE:
+        suffix = 2
+        while True:
+            alt = heading_entity_id(file_id, name, f"{locator}-{suffix}")
+            if alt not in graph:
+                node_id = alt
+                break
+            suffix += 1
+    metadata: dict[str, Any] = {
+        "name": name,
+        "file": file_id,
+        "source": source,
+    }
+    if start_line is not None:
+        metadata["start_line"] = int(start_line)
+    if page is not None:
+        metadata["page"] = int(page)
+    if level is not None:
+        metadata["level"] = int(level)
+    if end_line is not None:
+        metadata["end_line"] = int(end_line)
+    if end_page is not None:
+        metadata["end_page"] = int(end_page)
+    if node_id not in graph:
+        add_node(graph, node_id, HEADING_NODE_TYPE, metadata=metadata)
+    return node_id
+
+
 def add_contains_edge(graph: nx.DiGraph, parent_id: str, child_id: str) -> None:
     graph.add_edge(parent_id, child_id, type="contains", provenance="extracted")
 
@@ -123,6 +193,14 @@ def add_imports_edge(graph: nx.DiGraph, source_id: str, target_id: str) -> bool:
 
 def add_calls_edge(graph: nx.DiGraph, source_id: str, target_id: str) -> bool:
     return _add_typed_edge(graph, source_id, target_id, "calls")
+
+
+def add_section_of_edge(graph: nx.DiGraph, source_id: str, target_id: str) -> bool:
+    return _add_typed_edge(graph, source_id, target_id, "section_of")
+
+
+def add_mentions_edge(graph: nx.DiGraph, source_id: str, target_id: str) -> bool:
+    return _add_typed_edge(graph, source_id, target_id, "mentions")
 
 
 def _add_typed_edge(graph: nx.DiGraph, source_id: str, target_id: str, edge_type: str) -> bool:
@@ -189,6 +267,12 @@ def to_artifact_dict(graph: nx.DiGraph) -> dict[str, Any]:
     languages = graph.graph.get("languages")
     if languages is not None:
         graph_meta["languages"] = list(languages)
+    if "include_docs" in graph.graph:
+        graph_meta["include_docs"] = bool(graph.graph["include_docs"])
+    if "include_pdfs" in graph.graph:
+        graph_meta["include_pdfs"] = bool(graph.graph["include_pdfs"])
+    if "parse_skips" in graph.graph:
+        graph_meta["parse_skips"] = int(graph.graph["parse_skips"] or 0)
     data["graph"] = graph_meta
     return data
 
@@ -235,6 +319,31 @@ def _validate_code_metadata(node: dict[str, Any], path: Path) -> None:
         )
 
 
+def _validate_heading_metadata(node: dict[str, Any], path: Path) -> None:
+    meta = node["metadata"]
+    missing = HEADING_METADATA_REQUIRED - set(meta)
+    if missing:
+        raise GraphError(
+            f"Graph file {path} heading {node.get('id')!r} missing metadata keys "
+            f"{sorted(missing)}"
+        )
+    if not isinstance(meta.get("name"), str):
+        raise GraphError(f"Graph file {path} heading name must be a string")
+    if not isinstance(meta.get("file"), str):
+        raise GraphError(f"Graph file {path} heading file must be a string")
+    source = meta.get("source")
+    if source not in HEADING_SOURCES:
+        raise GraphError(f"Graph file {path} heading source must be one of {sorted(HEADING_SOURCES)}")
+    start_line = meta.get("start_line")
+    page = meta.get("page")
+    has_line = isinstance(start_line, int) and not isinstance(start_line, bool) and start_line >= 1
+    has_page = isinstance(page, int) and not isinstance(page, bool) and page >= 1
+    if not has_line and not has_page:
+        raise GraphError(
+            f"Graph file {path} heading {node.get('id')!r} must include start_line and/or page"
+        )
+
+
 def validate_artifact(data: dict[str, Any], path: Path) -> None:
     for key in ("schema_version", "nodes", "links", "graph"):
         if key not in data:
@@ -267,6 +376,8 @@ def validate_artifact(data: dict[str, Any], path: Path) -> None:
             raise GraphError(f"Graph file {path} node metadata must be an object")
         if node["type"] in CODE_NODE_TYPES:
             _validate_code_metadata(node, path)
+        if node["type"] == HEADING_NODE_TYPE:
+            _validate_heading_metadata(node, path)
 
     for link in data["links"]:
         if not isinstance(link, dict):
@@ -318,11 +429,14 @@ def stats_from_artifact(
     function_count = sum(1 for n in nodes if n.get("type") == "function")
     class_count = sum(1 for n in nodes if n.get("type") == "class")
     method_count = sum(1 for n in nodes if n.get("type") == "method")
+    heading_count = sum(1 for n in nodes if n.get("type") == "heading")
     contains_count = sum(1 for link in links if link.get("type") == "contains")
     references_count = sum(1 for link in links if link.get("type") == "references")
     defines_count = sum(1 for link in links if link.get("type") == "defines")
     imports_count = sum(1 for link in links if link.get("type") == "imports")
     calls_count = sum(1 for link in links if link.get("type") == "calls")
+    section_of_count = sum(1 for link in links if link.get("type") == "section_of")
+    mentions_count = sum(1 for link in links if link.get("type") == "mentions")
     project_root = None
     graph_meta = data.get("graph") or {}
     if isinstance(graph_meta, dict):
@@ -333,12 +447,15 @@ def stats_from_artifact(
         function_count=function_count,
         class_count=class_count,
         method_count=method_count,
+        heading_count=heading_count,
         total_nodes=len(nodes),
         contains_count=contains_count,
         references_count=references_count,
         defines_count=defines_count,
         imports_count=imports_count,
         calls_count=calls_count,
+        section_of_count=section_of_count,
+        mentions_count=mentions_count,
         project_root=project_root,
         graph_path=str(graph_path.resolve()),
         parse_skips=parse_skips,

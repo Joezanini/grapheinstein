@@ -18,6 +18,8 @@ from grapheinstein.core.graph import (
     to_artifact_dict,
 )
 from grapheinstein.core.parsers import DEFAULT_LANGUAGES, merge_code_structure
+from grapheinstein.core.parsers.docs import merge_docs_structure
+from grapheinstein.core.parsers.pdf import merge_pdf_structure
 from grapheinstein.core.references import add_reference_edges
 from grapheinstein.utils import resolve_project_path
 
@@ -111,6 +113,8 @@ def build_inventory_graph(
     project_root: Path,
     *,
     languages: Sequence[str] | None = None,
+    include_docs: bool = False,
+    include_pdfs: bool = False,
 ):
     root = resolve_project_path(project_root)
     graph = new_inventory_graph(root)
@@ -132,6 +136,13 @@ def build_inventory_graph(
     add_reference_edges(graph, root)
     enabled = list(languages) if languages is not None else list(DEFAULT_LANGUAGES)
     skips = merge_code_structure(graph, root, enabled)
+    graph.graph["languages"] = list(enabled)
+    graph.graph["include_docs"] = bool(include_docs)
+    graph.graph["include_pdfs"] = bool(include_pdfs)
+    if include_docs:
+        skips += merge_docs_structure(graph, root)
+    if include_pdfs:
+        skips += merge_pdf_structure(graph, root)
     graph.graph["parse_skips"] = skips
     return graph
 
@@ -141,10 +152,17 @@ def index_project(
     output_path: Path,
     *,
     languages: Sequence[str] | None = None,
+    include_docs: bool = False,
+    include_pdfs: bool = False,
 ):
     """Index project and write graph.json artifact. Returns (path, stats)."""
     root = resolve_project_path(project_root)
-    graph = build_inventory_graph(root, languages=languages)
+    graph = build_inventory_graph(
+        root,
+        languages=languages,
+        include_docs=include_docs,
+        include_pdfs=include_pdfs,
+    )
     written = save_graph(graph, output_path)
     artifact = to_artifact_dict(graph)
     parse_skips = int(graph.graph.get("parse_skips") or 0)
