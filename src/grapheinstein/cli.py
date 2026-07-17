@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import typer
 from rich.table import Table
 
 from grapheinstein.core.graph import GraphError, load_artifact, stats_from_artifact
 from grapheinstein.core.index import MediaExtrasError, index_project
+from grapheinstein.core.merge import MergeConflictError, merge_paths
 from grapheinstein.core.parsers import LanguageError, parse_languages_csv
 from grapheinstein.core.visualize import load_graph_for_visualize, print_summary, write_dot
 from grapheinstein.utils import (
@@ -27,7 +28,7 @@ cli = typer.Typer(
     add_completion=False,
 )
 
-_KNOWN_COMMANDS = frozenset({"index", "status", "visualize"})
+_KNOWN_COMMANDS = frozenset({"index", "status", "visualize", "merge"})
 _OPTS_WITH_VALUE = frozenset(
     {
         "--output",
@@ -115,6 +116,8 @@ def _run_index(
     enrich_llm: bool,
     llm_model: Optional[str],
     llm_base_url: Optional[str],
+    compress: bool,
+    versioned: bool,
 ) -> None:
     languages_override = None
     if languages is not None:
@@ -130,6 +133,8 @@ def _run_index(
             languages_override=languages_override,
             llm_model_override=llm_model,
             llm_base_url_override=llm_base_url,
+            compress_override=True if compress else None,
+            versioned_override=True if versioned else None,
         )
     except ConfigError as exc:
         _fail(str(exc), 1)
@@ -149,8 +154,12 @@ def _run_index(
             llm_model=cfg.llm_model,
             llm_base_url=cfg.llm_base_url,
             llm_confidence_threshold=cfg.llm_confidence_threshold,
+            compress=cfg.compress,
+            versioned=cfg.versioned,
         )
     except MediaExtrasError as exc:
+        _fail(str(exc), 1)
+    except GraphError as exc:
         _fail(str(exc), 1)
     except FileNotFoundError as exc:
         _fail(str(exc), 1)
@@ -208,6 +217,16 @@ def index_cmd(
         "--llm-base-url",
         help="Ollama base URL (default: http://localhost:11434 or config)",
     ),
+    compress: bool = typer.Option(
+        False,
+        "--compress",
+        help="Write gzip-compressed graph artifact (.json.gz)",
+    ),
+    versioned: bool = typer.Option(
+        False,
+        "--versioned",
+        help="Also write next graph_vN.json[.gz] snapshot beside primary output",
+    ),
     config: Optional[Path] = typer.Option(
         None,
         "--config",
@@ -226,7 +245,69 @@ def index_cmd(
         enrich_llm=enrich_llm,
         llm_model=llm_model,
         llm_base_url=llm_base_url,
+        compress=compress,
+        versioned=versioned,
     )
+
+
+@cli.command("merge")
+def merge_cmd(
+    inputs: List[Path] = typer.Argument(
+        ...,
+        help="Two or more graph.json / graph.json.gz artifacts to combine",
+    ),
+    output: Path = typer.Option(
+        ...,
+        "--output",
+        "-o",
+        help="Destination path for the merged graph",
+    ),
+    compress: bool = typer.Option(
+        False,
+        "--compress",
+        help="Write gzip-compressed merged artifact (.json.gz)",
+    ),
+    config: Optional[Path] = typer.Option(
+        None,
+        "--config",
+        help="YAML config file (overrides ~/.grapheinstein/config.yaml)",
+    ),
+) -> None:
+    """Combine two or more portable graphs into one."""
+    try:
+        cfg = load_config(
+            config_path=config,
+            compress_override=True if compress else None,
+        )
+    except ConfigError as exc:
+        _fail(str(exc), 1)
+
+    setup_logging(cfg.log_level)
+
+    if len(inputs) < 2:
+        _fail("merge requires at least two input graph files", 1)
+
+    try:
+        written = merge_paths(list(inputs), output_path=output, compress=cfg.compress)
+        artifact = load_artifact(written)
+        stats = stats_from_artifact(artifact, written)
+    except MergeConflictError as exc:
+        _fail(str(exc), 1)
+    except GraphError as exc:
+        _fail(str(exc), 1)
+    except FileNotFoundError as exc:
+        _fail(str(exc), 1)
+    except OSError as exc:
+        _fail(str(exc), 1)
+
+    table = Table(title="Merge complete", show_header=True, header_style="bold")
+    table.add_column("Metric")
+    table.add_column("Value")
+    table.add_row("Inputs", str(len(inputs)))
+    table.add_row("Total nodes", str(stats.total_nodes))
+    table.add_row("Total links", str(len(artifact.get("links") or [])))
+    table.add_row("Output", str(written))
+    console.print(table)
 
 
 @cli.command("status")

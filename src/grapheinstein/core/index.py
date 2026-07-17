@@ -219,6 +219,8 @@ def index_project(
     llm_model: str | None = None,
     llm_base_url: str | None = None,
     llm_confidence_threshold: float | None = None,
+    compress: bool = False,
+    versioned: bool = False,
     ocr_extract=None,
     av_transcribe=None,
     llm_chat=None,
@@ -245,7 +247,7 @@ def index_project(
         skip_media_deps_check=skip_media_deps_check,
         skip_llm_preflight=skip_llm_preflight,
     )
-    written = save_graph(graph, output_path)
+    written = save_graph(graph, output_path, compress=compress, versioned=versioned)
     artifact = to_artifact_dict(graph)
     parse_skips = int(graph.graph.get("parse_skips") or 0)
     stats = stats_from_artifact(artifact, written, parse_skips=parse_skips)

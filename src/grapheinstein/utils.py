@@ -33,6 +33,8 @@ class AppConfig:
     llm_model: str = DEFAULT_MODEL
     llm_base_url: str = DEFAULT_BASE_URL
     llm_confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD
+    compress: bool = False
+    versioned: bool = False
 
 
 class ConfigError(Exception):
@@ -95,6 +97,12 @@ def _coerce_threshold(raw: Any, *, source: Path | None) -> float:
     return value
 
 
+def _coerce_bool(raw: Any, *, key: str, source: Path | None) -> bool:
+    if isinstance(raw, bool):
+        return raw
+    raise ConfigError(f"Config key {key!r} must be a boolean ({source})")
+
+
 def _coerce_config(raw: dict[str, Any], *, source: Path | None) -> dict[str, Any]:
     known = {
         "output",
@@ -103,6 +111,8 @@ def _coerce_config(raw: dict[str, Any], *, source: Path | None) -> dict[str, Any
         "llm_model",
         "llm_base_url",
         "llm_confidence_threshold",
+        "compress",
+        "versioned",
     }
     unknown = set(raw) - known
     for key in sorted(unknown):
@@ -133,6 +143,10 @@ def _coerce_config(raw: dict[str, Any], *, source: Path | None) -> dict[str, Any
         result["llm_confidence_threshold"] = _coerce_threshold(
             raw["llm_confidence_threshold"], source=source
         )
+    if "compress" in raw:
+        result["compress"] = _coerce_bool(raw["compress"], key="compress", source=source)
+    if "versioned" in raw:
+        result["versioned"] = _coerce_bool(raw["versioned"], key="versioned", source=source)
     return result
 
 
@@ -143,6 +157,8 @@ def load_config(
     languages_override: Sequence[str] | None = None,
     llm_model_override: str | None = None,
     llm_base_url_override: str | None = None,
+    compress_override: bool | None = None,
+    versioned_override: bool | None = None,
     user_config_path: Path | None = None,
 ) -> AppConfig:
     """
@@ -156,6 +172,8 @@ def load_config(
         "llm_model": DEFAULT_MODEL,
         "llm_base_url": DEFAULT_BASE_URL,
         "llm_confidence_threshold": DEFAULT_CONFIDENCE_THRESHOLD,
+        "compress": False,
+        "versioned": False,
     }
 
     default_user = user_config_path if user_config_path is not None else USER_CONFIG_PATH
@@ -189,6 +207,11 @@ def load_config(
             raise ConfigError("llm_base_url must be a non-empty string")
         merged["llm_base_url"] = llm_base_url_override.strip().rstrip("/")
 
+    if compress_override is not None:
+        merged["compress"] = bool(compress_override)
+    if versioned_override is not None:
+        merged["versioned"] = bool(versioned_override)
+
     return AppConfig(
         output=merged["output"],
         log_level=merged["log_level"],
@@ -196,6 +219,8 @@ def load_config(
         llm_model=merged["llm_model"],
         llm_base_url=merged["llm_base_url"],
         llm_confidence_threshold=float(merged["llm_confidence_threshold"]),
+        compress=bool(merged["compress"]),
+        versioned=bool(merged["versioned"]),
     )
 
 

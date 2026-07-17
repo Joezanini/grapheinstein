@@ -10,6 +10,7 @@ def test_help_lists_index_and_status():
     assert result.exit_code == 0
     assert "index" in result.output
     assert "status" in result.output
+    assert "merge" in result.output
 
 
 def test_index_help_lists_enrich_llm_flags():
@@ -19,3 +20,5 @@ def test_index_help_lists_enrich_llm_flags():
     assert "--llm-model" in result.output
     assert "--llm-base-url" in result.output
     assert "--transcribe-media" in result.output
+    assert "--compress" in result.output
+    assert "--versioned" in result.output

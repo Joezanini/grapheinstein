@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import gzip
 import json
+import os
 import re
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,6 +14,9 @@ from typing import Any
 
 import networkx as nx
 from networkx.readwrite import json_graph
+
+_VERSIONED_NAME_RE = re.compile(r"^graph_v(\d+)\.json(?:\.gz)?$")
+_GZIP_MAGIC = b"\x1f\x8b"
 
 SCHEMA_VERSION = "6.0.0"
 FILE_DIR_TYPES = frozenset({"file", "dir"})
@@ -527,15 +533,125 @@ def to_artifact_dict(graph: nx.DiGraph) -> dict[str, Any]:
     return data
 
 
-def save_graph(graph: nx.DiGraph, output_path: Path) -> Path:
-    path = output_path.expanduser()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    artifact = to_artifact_dict(graph)
+def resolve_graph_output_path(path: Path, *, compress: bool = False) -> Path:
+    """Resolve destination path; append ``.gz`` when compressing unless already present."""
+    p = path.expanduser()
+    if compress and not p.name.endswith(".gz"):
+        return Path(str(p) + ".gz")
+    return p
+
+
+def next_versioned_graph_path(directory: Path, *, compress: bool = False) -> Path:
+    """Return the next unused ``graph_vN.json[.gz]`` path in ``directory``."""
+    directory = directory.expanduser()
+    directory.mkdir(parents=True, exist_ok=True)
+    max_n = 0
     try:
-        path.write_text(json.dumps(artifact, indent=2, sort_keys=False) + "\n", encoding="utf-8")
+        children = list(directory.iterdir())
+    except OSError:
+        children = []
+    for child in children:
+        match = _VERSIONED_NAME_RE.match(child.name)
+        if match:
+            max_n = max(max_n, int(match.group(1)))
+    n = max_n + 1
+    while True:
+        name = f"graph_v{n}.json.gz" if compress else f"graph_v{n}.json"
+        candidate = directory / name
+        if not candidate.exists():
+            return candidate
+        n += 1
+
+
+def _is_gzip_payload(path: Path, raw: bytes) -> bool:
+    if path.name.endswith(".gz"):
+        return True
+    return len(raw) >= 2 and raw[:2] == _GZIP_MAGIC
+
+
+def _read_artifact_text(path: Path) -> str:
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise GraphError(f"Cannot read graph file {path}: {exc}") from exc
+    if _is_gzip_payload(path, raw):
+        try:
+            return gzip.decompress(raw).decode("utf-8")
+        except OSError as exc:
+            raise GraphError(f"Invalid gzip graph file {path}: {exc}") from exc
+        except UnicodeDecodeError as exc:
+            raise GraphError(f"Invalid graph encoding in {path}: {exc}") from exc
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise GraphError(f"Invalid graph encoding in {path}: {exc}") from exc
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=str(path.parent),
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
+        raise
+
+
+def write_artifact_dict(
+    artifact: dict[str, Any],
+    output_path: Path,
+    *,
+    compress: bool = False,
+) -> Path:
+    """Validate then atomically write a portable graph artifact (plain or gzip)."""
+    path = resolve_graph_output_path(output_path, compress=compress)
+    validate_artifact(artifact, path)
+    text = json.dumps(artifact, indent=2, sort_keys=False) + "\n"
+    payload = text.encode("utf-8")
+    use_gzip = compress or path.name.endswith(".gz")
+    try:
+        if use_gzip:
+            _atomic_write_bytes(path, gzip.compress(payload))
+        else:
+            _atomic_write_bytes(path, payload)
     except OSError as exc:
         raise OSError(f"Cannot write graph to {path}: {exc}") from exc
     return path.resolve()
+
+
+def save_graph(
+    graph: nx.DiGraph,
+    output_path: Path,
+    *,
+    compress: bool = False,
+    versioned: bool = False,
+) -> Path:
+    """
+    Validate and atomically write graph artifact.
+
+    When ``versioned`` is true, also write the next ``graph_vN`` snapshot beside
+    the primary path without overwriting existing numbered files.
+    """
+    artifact = to_artifact_dict(graph)
+    primary = write_artifact_dict(artifact, output_path, compress=compress)
+    if versioned:
+        snap = next_versioned_graph_path(primary.parent, compress=compress)
+        # Path already includes .gz when compressed; write gzip by extension.
+        write_artifact_dict(artifact, snap, compress=snap.name.endswith(".gz"))
+    return primary
 
 
 def _reject_old_node_shape(node: Any, path: Path) -> None:
@@ -734,6 +850,7 @@ def validate_artifact(data: dict[str, Any], path: Path) -> None:
         if node["type"] == CONCEPT_NODE_TYPE:
             _validate_concept_metadata(node, path)
 
+    node_ids = {n["id"] for n in data["nodes"] if isinstance(n, dict) and "id" in n}
     for link in data["links"]:
         if not isinstance(link, dict):
             raise GraphError(f"Graph file {path} has invalid link entry")
@@ -750,6 +867,11 @@ def validate_artifact(data: dict[str, Any], path: Path) -> None:
             raise GraphError(
                 f"Graph file {path} related_to edges must have provenance 'inferred'"
             )
+        if link["source"] not in node_ids or link["target"] not in node_ids:
+            raise GraphError(
+                f"Graph file {path} link endpoints must exist in nodes "
+                f"(source={link['source']!r}, target={link['target']!r})"
+            )
         _validate_enrichment_link_attrs(link, path)
 
 
@@ -757,11 +879,10 @@ def load_artifact(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(str(path))
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        text = _read_artifact_text(path)
+        data = json.loads(text)
     except json.JSONDecodeError as exc:
         raise GraphError(f"Invalid graph JSON in {path}: {exc}") from exc
-    except OSError as exc:
-        raise GraphError(f"Cannot read graph file {path}: {exc}") from exc
     if not isinstance(data, dict):
         raise GraphError(f"Graph file {path} must contain a JSON object")
     nodes = data.get("nodes")

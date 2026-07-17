@@ -1,0 +1,29 @@
+{
+  "schema_version": "6.0.0",
+  "directed": true,
+  "multigraph": false,
+  "graph": {
+    "project_root": "/projects/alpha",
+    "generated_at": "2026-07-17T00:00:00Z"
+  },
+  "nodes": [
+    {
+      "id": ".",
+      "type": "dir",
+      "metadata": {}
+    },
+    {
+      "id": "a.txt",
+      "type": "file",
+      "metadata": {}
+    }
+  ],
+  "links": [
+    {
+      "source": ".",
+      "target": "a.txt",
+      "type": "contains",
+      "provenance": "extracted"
+    }
+  ]
+}
