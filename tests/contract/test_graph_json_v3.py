@@ -12,8 +12,8 @@ def test_v3_code_nodes_and_provenance(tmp_path: Path):
     out = tmp_path / "graph.json"
     index_project(FIXTURE, out, languages=["python", "go"])
     data = load_artifact(out)
-    assert data["schema_version"] == "5.0.0"
-    assert SCHEMA_VERSION == "5.0.0"
+    assert data["schema_version"] == "6.0.0"
+    assert SCHEMA_VERSION == "6.0.0"
 
     functions = [n for n in data["nodes"] if n["type"] == "function"]
     assert any(n["metadata"]["name"] == "greet" and n["metadata"]["start_line"] == 1 for n in functions)

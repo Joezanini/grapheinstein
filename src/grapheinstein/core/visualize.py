@@ -32,6 +32,7 @@ def print_summary(artifact: dict[str, Any], stats: GraphStats, *, sample_limit: 
     table.add_row("Headings", str(stats.heading_count))
     table.add_row("Media texts", str(stats.media_text_count))
     table.add_row("Transcript chunks", str(stats.transcript_chunk_count))
+    table.add_row("Concepts", str(stats.concept_count))
     table.add_row("Total nodes", str(stats.total_nodes))
     table.add_row("Contains edges", str(stats.contains_count))
     table.add_row("References edges", str(stats.references_count))
@@ -41,6 +42,8 @@ def print_summary(artifact: dict[str, Any], stats: GraphStats, *, sample_limit: 
     table.add_row("Section-of edges", str(stats.section_of_count))
     table.add_row("Mentions edges", str(stats.mentions_count))
     table.add_row("Related-to edges", str(stats.related_to_count))
+    table.add_row("Implements edges", str(stats.implements_count))
+    table.add_row("Depends-on edges", str(stats.depends_on_count))
     table.add_row("Graph path", stats.graph_path)
     if stats.project_root:
         table.add_row("Project root", stats.project_root)

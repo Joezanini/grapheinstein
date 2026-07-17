@@ -29,7 +29,17 @@ cli = typer.Typer(
 
 _KNOWN_COMMANDS = frozenset({"index", "status", "visualize"})
 _OPTS_WITH_VALUE = frozenset(
-    {"--output", "-o", "--config", "--input", "-i", "--dot", "--languages"}
+    {
+        "--output",
+        "-o",
+        "--config",
+        "--input",
+        "-i",
+        "--dot",
+        "--languages",
+        "--llm-model",
+        "--llm-base-url",
+    }
 )
 
 
@@ -75,6 +85,7 @@ def _print_index_summary(stats, output_path: Path) -> None:
     table.add_row("Headings", str(stats.heading_count))
     table.add_row("Media texts", str(stats.media_text_count))
     table.add_row("Transcript chunks", str(stats.transcript_chunk_count))
+    table.add_row("Concepts", str(stats.concept_count))
     table.add_row("Total nodes", str(stats.total_nodes))
     table.add_row("Contains edges", str(stats.contains_count))
     table.add_row("References edges", str(stats.references_count))
@@ -84,6 +95,8 @@ def _print_index_summary(stats, output_path: Path) -> None:
     table.add_row("Section-of edges", str(stats.section_of_count))
     table.add_row("Mentions edges", str(stats.mentions_count))
     table.add_row("Related-to edges", str(stats.related_to_count))
+    table.add_row("Implements edges", str(stats.implements_count))
+    table.add_row("Depends-on edges", str(stats.depends_on_count))
     if stats.parse_skips:
         table.add_row("Parse skips", str(stats.parse_skips))
     table.add_row("Output", str(output_path))
@@ -99,6 +112,9 @@ def _run_index(
     include_docs: bool,
     include_pdfs: bool,
     transcribe_media: bool,
+    enrich_llm: bool,
+    llm_model: Optional[str],
+    llm_base_url: Optional[str],
 ) -> None:
     languages_override = None
     if languages is not None:
@@ -112,6 +128,8 @@ def _run_index(
             config_path=config,
             output_override=output,
             languages_override=languages_override,
+            llm_model_override=llm_model,
+            llm_base_url_override=llm_base_url,
         )
     except ConfigError as exc:
         _fail(str(exc), 1)
@@ -127,6 +145,10 @@ def _run_index(
             include_docs=include_docs,
             include_pdfs=include_pdfs,
             transcribe_media=transcribe_media,
+            enrich_llm=enrich_llm,
+            llm_model=cfg.llm_model,
+            llm_base_url=cfg.llm_base_url,
+            llm_confidence_threshold=cfg.llm_confidence_threshold,
         )
     except MediaExtrasError as exc:
         _fail(str(exc), 1)
@@ -171,6 +193,21 @@ def index_cmd(
         "--transcribe-media",
         help="Enable image OCR, A/V transcription, and media linking",
     ),
+    enrich_llm: bool = typer.Option(
+        False,
+        "--enrich-llm",
+        help="Enable local LLM concept/relation enrichment via Ollama",
+    ),
+    llm_model: Optional[str] = typer.Option(
+        None,
+        "--llm-model",
+        help="Ollama model tag (default: qwen3.5-2b-mlx:fp16-8gbGPU or config)",
+    ),
+    llm_base_url: Optional[str] = typer.Option(
+        None,
+        "--llm-base-url",
+        help="Ollama base URL (default: http://localhost:11434 or config)",
+    ),
     config: Optional[Path] = typer.Option(
         None,
         "--config",
@@ -186,6 +223,9 @@ def index_cmd(
         include_docs=include_docs,
         include_pdfs=include_pdfs,
         transcribe_media=transcribe_media,
+        enrich_llm=enrich_llm,
+        llm_model=llm_model,
+        llm_base_url=llm_base_url,
     )
 
 
@@ -233,6 +273,7 @@ def status_cmd(
     table.add_row("Headings", str(stats.heading_count))
     table.add_row("Media texts", str(stats.media_text_count))
     table.add_row("Transcript chunks", str(stats.transcript_chunk_count))
+    table.add_row("Concepts", str(stats.concept_count))
     table.add_row("Total nodes", str(stats.total_nodes))
     table.add_row("Contains edges", str(stats.contains_count))
     table.add_row("References edges", str(stats.references_count))
@@ -242,6 +283,8 @@ def status_cmd(
     table.add_row("Section-of edges", str(stats.section_of_count))
     table.add_row("Mentions edges", str(stats.mentions_count))
     table.add_row("Related-to edges", str(stats.related_to_count))
+    table.add_row("Implements edges", str(stats.implements_count))
+    table.add_row("Depends-on edges", str(stats.depends_on_count))
     table.add_row("Graph path", stats.graph_path)
     if stats.project_root:
         table.add_row("Project root", stats.project_root)

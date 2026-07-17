@@ -3,7 +3,7 @@ from pathlib import Path
 from grapheinstein.core.visualize import artifact_to_dot, write_dot
 
 SAMPLE = {
-    "schema_version": "5.0.0",
+    "schema_version": "6.0.0",
     "nodes": [
         {"id": ".", "type": "dir", "metadata": {}},
         {"id": "x.py", "type": "file", "metadata": {}},

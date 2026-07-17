@@ -119,10 +119,27 @@ def build_inventory_graph(
     include_docs: bool = False,
     include_pdfs: bool = False,
     transcribe_media: bool = False,
+    enrich_llm: bool = False,
+    llm_model: str | None = None,
+    llm_base_url: str | None = None,
+    llm_confidence_threshold: float | None = None,
     ocr_extract=None,
     av_transcribe=None,
+    llm_chat=None,
+    list_models_fn=None,
     skip_media_deps_check: bool = False,
+    skip_llm_preflight: bool = False,
 ):
+    from grapheinstein.core.parsers.llm_enrich import (
+        DEFAULT_CONFIDENCE_THRESHOLD,
+        merge_llm_enrichment,
+    )
+    from grapheinstein.core.parsers.llm_ollama import (
+        DEFAULT_BASE_URL,
+        DEFAULT_MODEL,
+        check_ready,
+    )
+
     root = resolve_project_path(project_root)
     if transcribe_media and not skip_media_deps_check:
         ensure_media_deps()
@@ -149,6 +166,16 @@ def build_inventory_graph(
     graph.graph["include_docs"] = bool(include_docs)
     graph.graph["include_pdfs"] = bool(include_pdfs)
     graph.graph["transcribe_media"] = bool(transcribe_media)
+    graph.graph["enrich_llm"] = bool(enrich_llm)
+    model = llm_model or DEFAULT_MODEL
+    base_url = (llm_base_url or DEFAULT_BASE_URL).rstrip("/")
+    threshold = (
+        DEFAULT_CONFIDENCE_THRESHOLD
+        if llm_confidence_threshold is None
+        else float(llm_confidence_threshold)
+    )
+    if enrich_llm:
+        graph.graph["llm_model"] = model
     if include_docs:
         skips += merge_docs_structure(graph, root)
     if include_pdfs:
@@ -157,6 +184,25 @@ def build_inventory_graph(
         skips += merge_media_ocr(graph, root, extract_text=ocr_extract)
         skips += merge_media_av(graph, root, transcribe=av_transcribe)
         merge_media_links(graph)
+    if enrich_llm:
+        ready = True
+        if llm_chat is not None:
+            ready = True
+        elif not skip_llm_preflight:
+            ready, _msg = check_ready(
+                model=model, base_url=base_url, list_models_fn=list_models_fn
+            )
+        else:
+            ready = True
+        if ready:
+            skips += merge_llm_enrichment(
+                graph,
+                root,
+                model=model,
+                base_url=base_url,
+                confidence_threshold=threshold,
+                llm_chat=llm_chat,
+            )
     graph.graph["parse_skips"] = skips
     return graph
 
@@ -169,9 +215,16 @@ def index_project(
     include_docs: bool = False,
     include_pdfs: bool = False,
     transcribe_media: bool = False,
+    enrich_llm: bool = False,
+    llm_model: str | None = None,
+    llm_base_url: str | None = None,
+    llm_confidence_threshold: float | None = None,
     ocr_extract=None,
     av_transcribe=None,
+    llm_chat=None,
+    list_models_fn=None,
     skip_media_deps_check: bool = False,
+    skip_llm_preflight: bool = False,
 ):
     """Index project and write graph.json artifact. Returns (path, stats)."""
     root = resolve_project_path(project_root)
@@ -181,9 +234,16 @@ def index_project(
         include_docs=include_docs,
         include_pdfs=include_pdfs,
         transcribe_media=transcribe_media,
+        enrich_llm=enrich_llm,
+        llm_model=llm_model,
+        llm_base_url=llm_base_url,
+        llm_confidence_threshold=llm_confidence_threshold,
         ocr_extract=ocr_extract,
         av_transcribe=av_transcribe,
+        llm_chat=llm_chat,
+        list_models_fn=list_models_fn,
         skip_media_deps_check=skip_media_deps_check,
+        skip_llm_preflight=skip_llm_preflight,
     )
     written = save_graph(graph, output_path)
     artifact = to_artifact_dict(graph)

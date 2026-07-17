@@ -1,4 +1,4 @@
-"""NetworkX graph construction and graph.json persistence (schema 5.0.0)."""
+"""NetworkX graph construction and graph.json persistence (schema 6.0.0)."""
 
 from __future__ import annotations
 
@@ -12,21 +12,36 @@ from typing import Any
 import networkx as nx
 from networkx.readwrite import json_graph
 
-SCHEMA_VERSION = "5.0.0"
+SCHEMA_VERSION = "6.0.0"
 FILE_DIR_TYPES = frozenset({"file", "dir"})
 CODE_NODE_TYPES = frozenset({"function", "class", "method"})
 HEADING_NODE_TYPE = "heading"
 MEDIA_TEXT_NODE_TYPE = "media_text"
 TRANSCRIPT_CHUNK_NODE_TYPE = "transcript_chunk"
+CONCEPT_NODE_TYPE = "concept"
 NODE_TYPES = FILE_DIR_TYPES | CODE_NODE_TYPES | frozenset(
-    {HEADING_NODE_TYPE, MEDIA_TEXT_NODE_TYPE, TRANSCRIPT_CHUNK_NODE_TYPE}
+    {
+        HEADING_NODE_TYPE,
+        MEDIA_TEXT_NODE_TYPE,
+        TRANSCRIPT_CHUNK_NODE_TYPE,
+        CONCEPT_NODE_TYPE,
+    }
 )
 INVENTORY_EDGE_TYPES = frozenset({"contains", "references"})
 CODE_EDGE_TYPES = frozenset({"defines", "imports", "calls"})
 DOC_EDGE_TYPES = frozenset({"section_of", "mentions"})
 MEDIA_EDGE_TYPES = frozenset({"related_to"})
-EDGE_TYPES = INVENTORY_EDGE_TYPES | CODE_EDGE_TYPES | DOC_EDGE_TYPES | MEDIA_EDGE_TYPES
+LLM_EDGE_TYPES = frozenset({"implements", "depends_on"})
+EDGE_TYPES = (
+    INVENTORY_EDGE_TYPES
+    | CODE_EDGE_TYPES
+    | DOC_EDGE_TYPES
+    | MEDIA_EDGE_TYPES
+    | LLM_EDGE_TYPES
+)
 PROVENANCE_VALUES = frozenset({"extracted", "inferred"})
+ENRICHMENT_EDGE_TYPES_REQUIRING_ATTRS = frozenset({"implements", "depends_on"})
+CONCEPT_KINDS = frozenset({"domain_term", "library", "other"})
 CODE_METADATA_REQUIRED = frozenset({"name", "language", "file", "start_line"})
 HEADING_METADATA_REQUIRED = frozenset({"name", "file", "source"})
 HEADING_SOURCES = frozenset({"markdown", "txt", "rst", "pdf"})
@@ -34,6 +49,7 @@ MEDIA_TEXT_METADATA_REQUIRED = frozenset({"file", "text", "source"})
 TRANSCRIPT_CHUNK_METADATA_REQUIRED = frozenset(
     {"file", "text", "source", "start_sec", "end_sec"}
 )
+CONCEPT_METADATA_REQUIRED = frozenset({"name"})
 
 
 @dataclass(frozen=True)
@@ -46,6 +62,7 @@ class GraphStats:
     heading_count: int
     media_text_count: int
     transcript_chunk_count: int
+    concept_count: int
     total_nodes: int
     contains_count: int
     references_count: int
@@ -55,6 +72,8 @@ class GraphStats:
     section_of_count: int
     mentions_count: int
     related_to_count: int
+    implements_count: int
+    depends_on_count: int
     project_root: str | None
     graph_path: str
     parse_skips: int = 0
@@ -300,6 +319,113 @@ def add_related_to_edge(
     return ok
 
 
+def slugify_concept(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return slug or "untitled"
+
+
+def concept_id(slug: str) -> str:
+    return f"concept::{slug}"
+
+
+def add_concept(
+    graph: nx.DiGraph,
+    *,
+    name: str,
+    kind: str | None = None,
+    aliases: list[str] | None = None,
+) -> str:
+    """Add or reuse a concept node. Returns node id. First name wins for casing."""
+    cleaned = (name or "").strip()
+    if not cleaned:
+        raise ValueError("concept requires non-empty name")
+    if kind is not None and kind not in CONCEPT_KINDS:
+        raise ValueError(f"Invalid concept kind: {kind}")
+    node_id = concept_id(slugify_concept(cleaned))
+    if node_id in graph and graph.nodes[node_id].get("type") == CONCEPT_NODE_TYPE:
+        return node_id
+    metadata: dict[str, Any] = {"name": cleaned}
+    if kind is not None:
+        metadata["kind"] = kind
+    if aliases:
+        metadata["aliases"] = list(aliases)
+    add_node(graph, node_id, CONCEPT_NODE_TYPE, metadata=metadata)
+    return node_id
+
+
+def _validate_confidence_evidence(confidence: float, evidence: str) -> None:
+    if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
+        raise ValueError("confidence must be a number")
+    conf = float(confidence)
+    if conf < 0.0 or conf > 1.0:
+        raise ValueError("confidence must be in [0.0, 1.0]")
+    if not isinstance(evidence, str) or not evidence.strip():
+        raise ValueError("evidence must be a non-empty string")
+
+
+def add_implements_edge(
+    graph: nx.DiGraph,
+    source_id: str,
+    target_id: str,
+    *,
+    confidence: float,
+    evidence: str,
+) -> bool:
+    """Add implements edge (inferred) with confidence and evidence."""
+    _validate_confidence_evidence(confidence, evidence)
+    return _add_typed_edge(
+        graph,
+        source_id,
+        target_id,
+        "implements",
+        provenance="inferred",
+        confidence=float(confidence),
+        evidence=evidence.strip(),
+    )
+
+
+def add_depends_on_edge(
+    graph: nx.DiGraph,
+    source_id: str,
+    target_id: str,
+    *,
+    confidence: float,
+    evidence: str,
+) -> bool:
+    """Add depends_on edge (inferred) with confidence and evidence."""
+    _validate_confidence_evidence(confidence, evidence)
+    return _add_typed_edge(
+        graph,
+        source_id,
+        target_id,
+        "depends_on",
+        provenance="inferred",
+        confidence=float(confidence),
+        evidence=evidence.strip(),
+    )
+
+
+def add_mentions_concept_edge(
+    graph: nx.DiGraph,
+    source_id: str,
+    target_id: str,
+    *,
+    confidence: float,
+    evidence: str,
+) -> bool:
+    """Add enrichment mentions edge to a concept (extracted) with confidence/evidence."""
+    _validate_confidence_evidence(confidence, evidence)
+    return _add_typed_edge(
+        graph,
+        source_id,
+        target_id,
+        "mentions",
+        provenance="extracted",
+        confidence=float(confidence),
+        evidence=evidence.strip(),
+    )
+
+
 def _add_typed_edge(
     graph: nx.DiGraph,
     source_id: str,
@@ -307,6 +433,8 @@ def _add_typed_edge(
     edge_type: str,
     *,
     provenance: str = "extracted",
+    confidence: float | None = None,
+    evidence: str | None = None,
 ) -> bool:
     if source_id == target_id:
         return False
@@ -321,6 +449,10 @@ def _add_typed_edge(
         # Different relationship already occupies the pair — skip to keep Multigraph=false
         return False
     attrs: dict[str, Any] = {"type": edge_type, "provenance": provenance}
+    if confidence is not None:
+        attrs["confidence"] = float(confidence)
+    if evidence is not None:
+        attrs["evidence"] = evidence
     graph.add_edge(source_id, target_id, **attrs)
     return True
 
@@ -366,6 +498,10 @@ def to_artifact_dict(graph: nx.DiGraph) -> dict[str, Any]:
         }
         if link.get("reason"):
             entry["reason"] = link["reason"]
+        if "confidence" in link and link["confidence"] is not None:
+            entry["confidence"] = float(link["confidence"])
+        if link.get("evidence"):
+            entry["evidence"] = link["evidence"]
         links.append(entry)
     data["links"] = links
     graph_meta: dict[str, Any] = {
@@ -381,6 +517,10 @@ def to_artifact_dict(graph: nx.DiGraph) -> dict[str, Any]:
         graph_meta["include_pdfs"] = bool(graph.graph["include_pdfs"])
     if "transcribe_media" in graph.graph:
         graph_meta["transcribe_media"] = bool(graph.graph["transcribe_media"])
+    if "enrich_llm" in graph.graph:
+        graph_meta["enrich_llm"] = bool(graph.graph["enrich_llm"])
+    if graph.graph.get("llm_model"):
+        graph_meta["llm_model"] = str(graph.graph["llm_model"])
     if "parse_skips" in graph.graph:
         graph_meta["parse_skips"] = int(graph.graph["parse_skips"] or 0)
     data["graph"] = graph_meta
@@ -498,6 +638,61 @@ def _validate_transcript_chunk_metadata(node: dict[str, Any], path: Path) -> Non
         )
 
 
+def _validate_concept_metadata(node: dict[str, Any], path: Path) -> None:
+    meta = node["metadata"]
+    missing = CONCEPT_METADATA_REQUIRED - set(meta)
+    if missing:
+        raise GraphError(
+            f"Graph file {path} concept {node.get('id')!r} missing metadata keys "
+            f"{sorted(missing)}"
+        )
+    if not isinstance(meta.get("name"), str) or not str(meta.get("name")).strip():
+        raise GraphError(f"Graph file {path} concept name must be a non-empty string")
+    kind = meta.get("kind")
+    if kind is not None and kind not in CONCEPT_KINDS:
+        raise GraphError(
+            f"Graph file {path} concept kind must be one of {sorted(CONCEPT_KINDS)}"
+        )
+
+
+def _validate_enrichment_link_attrs(link: dict[str, Any], path: Path) -> None:
+    edge_type = link["type"]
+    requires = edge_type in ENRICHMENT_EDGE_TYPES_REQUIRING_ATTRS or (
+        edge_type == "mentions" and ("confidence" in link or "evidence" in link)
+    )
+    if edge_type in ENRICHMENT_EDGE_TYPES_REQUIRING_ATTRS:
+        requires = True
+    if not requires and "confidence" not in link and "evidence" not in link:
+        return
+    if edge_type in ENRICHMENT_EDGE_TYPES_REQUIRING_ATTRS:
+        if "confidence" not in link or "evidence" not in link:
+            raise GraphError(
+                f"Graph file {path} {edge_type} edges must include confidence and evidence"
+            )
+    if "confidence" in link:
+        conf = link["confidence"]
+        if not isinstance(conf, (int, float)) or isinstance(conf, bool):
+            raise GraphError(f"Graph file {path} link confidence must be a number")
+        if float(conf) < 0.0 or float(conf) > 1.0:
+            raise GraphError(
+                f"Graph file {path} link confidence must be in [0.0, 1.0]"
+            )
+    if "evidence" in link:
+        ev = link["evidence"]
+        if not isinstance(ev, str) or not ev.strip():
+            raise GraphError(
+                f"Graph file {path} link evidence must be a non-empty string"
+            )
+    if edge_type == "implements" and link["provenance"] != "inferred":
+        raise GraphError(
+            f"Graph file {path} implements edges must have provenance 'inferred'"
+        )
+    if edge_type == "depends_on" and link["provenance"] != "inferred":
+        raise GraphError(
+            f"Graph file {path} depends_on edges must have provenance 'inferred'"
+        )
+
+
 def validate_artifact(data: dict[str, Any], path: Path) -> None:
     for key in ("schema_version", "nodes", "links", "graph"):
         if key not in data:
@@ -536,6 +731,8 @@ def validate_artifact(data: dict[str, Any], path: Path) -> None:
             _validate_media_text_metadata(node, path)
         if node["type"] == TRANSCRIPT_CHUNK_NODE_TYPE:
             _validate_transcript_chunk_metadata(node, path)
+        if node["type"] == CONCEPT_NODE_TYPE:
+            _validate_concept_metadata(node, path)
 
     for link in data["links"]:
         if not isinstance(link, dict):
@@ -553,6 +750,7 @@ def validate_artifact(data: dict[str, Any], path: Path) -> None:
             raise GraphError(
                 f"Graph file {path} related_to edges must have provenance 'inferred'"
             )
+        _validate_enrichment_link_attrs(link, path)
 
 
 def load_artifact(path: Path) -> dict[str, Any]:
@@ -594,6 +792,7 @@ def stats_from_artifact(
     heading_count = sum(1 for n in nodes if n.get("type") == "heading")
     media_text_count = sum(1 for n in nodes if n.get("type") == "media_text")
     transcript_chunk_count = sum(1 for n in nodes if n.get("type") == "transcript_chunk")
+    concept_count = sum(1 for n in nodes if n.get("type") == "concept")
     contains_count = sum(1 for link in links if link.get("type") == "contains")
     references_count = sum(1 for link in links if link.get("type") == "references")
     defines_count = sum(1 for link in links if link.get("type") == "defines")
@@ -602,6 +801,8 @@ def stats_from_artifact(
     section_of_count = sum(1 for link in links if link.get("type") == "section_of")
     mentions_count = sum(1 for link in links if link.get("type") == "mentions")
     related_to_count = sum(1 for link in links if link.get("type") == "related_to")
+    implements_count = sum(1 for link in links if link.get("type") == "implements")
+    depends_on_count = sum(1 for link in links if link.get("type") == "depends_on")
     project_root = None
     graph_meta = data.get("graph") or {}
     if isinstance(graph_meta, dict):
@@ -615,6 +816,7 @@ def stats_from_artifact(
         heading_count=heading_count,
         media_text_count=media_text_count,
         transcript_chunk_count=transcript_chunk_count,
+        concept_count=concept_count,
         total_nodes=len(nodes),
         contains_count=contains_count,
         references_count=references_count,
@@ -624,6 +826,8 @@ def stats_from_artifact(
         section_of_count=section_of_count,
         mentions_count=mentions_count,
         related_to_count=related_to_count,
+        implements_count=implements_count,
+        depends_on_count=depends_on_count,
         project_root=project_root,
         graph_path=str(graph_path.resolve()),
         parse_skips=parse_skips,

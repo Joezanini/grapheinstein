@@ -10,6 +10,8 @@ import yaml
 from loguru import logger
 from rich.console import Console
 
+from grapheinstein.core.parsers.llm_ollama import DEFAULT_BASE_URL, DEFAULT_MODEL
+from grapheinstein.core.parsers.llm_enrich import DEFAULT_CONFIDENCE_THRESHOLD
 from grapheinstein.core.parsers.registry import (
     DEFAULT_LANGUAGES,
     LanguageError,
@@ -28,6 +30,9 @@ class AppConfig:
     output: str = DEFAULT_OUTPUT
     log_level: str = DEFAULT_LOG_LEVEL
     languages: tuple[str, ...] = field(default_factory=lambda: tuple(DEFAULT_LANGUAGES))
+    llm_model: str = DEFAULT_MODEL
+    llm_base_url: str = DEFAULT_BASE_URL
+    llm_confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD
 
 
 class ConfigError(Exception):
@@ -76,8 +81,29 @@ def _coerce_languages(raw: Any, *, source: Path | None) -> list[str]:
         raise ConfigError(str(exc)) from exc
 
 
+def _coerce_threshold(raw: Any, *, source: Path | None) -> float:
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(
+            f"Config key 'llm_confidence_threshold' must be a number ({source})"
+        ) from exc
+    if value < 0.0 or value > 1.0:
+        raise ConfigError(
+            f"Config key 'llm_confidence_threshold' must be in [0.0, 1.0] ({source})"
+        )
+    return value
+
+
 def _coerce_config(raw: dict[str, Any], *, source: Path | None) -> dict[str, Any]:
-    known = {"output", "log_level", "languages"}
+    known = {
+        "output",
+        "log_level",
+        "languages",
+        "llm_model",
+        "llm_base_url",
+        "llm_confidence_threshold",
+    }
     unknown = set(raw) - known
     for key in sorted(unknown):
         logger.warning("Ignoring unknown config key {!r} from {}", key, source or "defaults")
@@ -93,6 +119,20 @@ def _coerce_config(raw: dict[str, Any], *, source: Path | None) -> dict[str, Any
         result["log_level"] = raw["log_level"]
     if "languages" in raw:
         result["languages"] = _coerce_languages(raw["languages"], source=source)
+    if "llm_model" in raw:
+        if not isinstance(raw["llm_model"], str) or not raw["llm_model"].strip():
+            raise ConfigError(f"Config key 'llm_model' must be a non-empty string ({source})")
+        result["llm_model"] = raw["llm_model"].strip()
+    if "llm_base_url" in raw:
+        if not isinstance(raw["llm_base_url"], str) or not raw["llm_base_url"].strip():
+            raise ConfigError(
+                f"Config key 'llm_base_url' must be a non-empty string ({source})"
+            )
+        result["llm_base_url"] = raw["llm_base_url"].strip().rstrip("/")
+    if "llm_confidence_threshold" in raw:
+        result["llm_confidence_threshold"] = _coerce_threshold(
+            raw["llm_confidence_threshold"], source=source
+        )
     return result
 
 
@@ -101,6 +141,8 @@ def load_config(
     config_path: Path | None = None,
     output_override: Path | str | None = None,
     languages_override: Sequence[str] | None = None,
+    llm_model_override: str | None = None,
+    llm_base_url_override: str | None = None,
     user_config_path: Path | None = None,
 ) -> AppConfig:
     """
@@ -111,6 +153,9 @@ def load_config(
         "output": DEFAULT_OUTPUT,
         "log_level": DEFAULT_LOG_LEVEL,
         "languages": list(DEFAULT_LANGUAGES),
+        "llm_model": DEFAULT_MODEL,
+        "llm_base_url": DEFAULT_BASE_URL,
+        "llm_confidence_threshold": DEFAULT_CONFIDENCE_THRESHOLD,
     }
 
     default_user = user_config_path if user_config_path is not None else USER_CONFIG_PATH
@@ -134,10 +179,23 @@ def load_config(
         except LanguageError as exc:
             raise ConfigError(str(exc)) from exc
 
+    if llm_model_override is not None:
+        if not llm_model_override.strip():
+            raise ConfigError("llm_model must be a non-empty string")
+        merged["llm_model"] = llm_model_override.strip()
+
+    if llm_base_url_override is not None:
+        if not llm_base_url_override.strip():
+            raise ConfigError("llm_base_url must be a non-empty string")
+        merged["llm_base_url"] = llm_base_url_override.strip().rstrip("/")
+
     return AppConfig(
         output=merged["output"],
         log_level=merged["log_level"],
         languages=tuple(merged["languages"]),
+        llm_model=merged["llm_model"],
+        llm_base_url=merged["llm_base_url"],
+        llm_confidence_threshold=float(merged["llm_confidence_threshold"]),
     )
 
 

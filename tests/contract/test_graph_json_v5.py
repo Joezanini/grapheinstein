@@ -40,8 +40,8 @@ def test_v5_media_nodes_and_provenance(tmp_path: Path):
         skip_media_deps_check=True,
     )
     data = load_artifact(out)
-    assert data["schema_version"] == "5.0.0"
-    assert SCHEMA_VERSION == "5.0.0"
+    assert data["schema_version"] == "6.0.0"
+    assert SCHEMA_VERSION == "6.0.0"
     assert data["graph"]["transcribe_media"] is True
 
     media = [n for n in data["nodes"] if n["type"] == "media_text"]
@@ -69,6 +69,6 @@ def test_transcribe_media_false_metadata(tmp_path: Path):
     out = tmp_path / "graph.json"
     index_project(FIXTURE, out, languages=[], transcribe_media=False)
     data = json.loads(out.read_text())
-    assert data["schema_version"] == "5.0.0"
+    assert data["schema_version"] == "6.0.0"
     assert data["graph"]["transcribe_media"] is False
     assert not any(n["type"] == "media_text" for n in data["nodes"])

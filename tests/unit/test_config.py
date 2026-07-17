@@ -10,6 +10,9 @@ def test_defaults_without_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     cfg = load_config(user_config_path=missing)
     assert cfg.output == "graph.json"
     assert cfg.log_level == "INFO"
+    assert cfg.llm_model == "qwen3.5-2b-mlx:fp16-8gbGPU"
+    assert cfg.llm_base_url == "http://localhost:11434"
+    assert cfg.llm_confidence_threshold == 0.5
 
 
 def test_cli_override_wins(tmp_path: Path):
@@ -39,3 +42,21 @@ def test_unknown_keys_ignored(tmp_path: Path):
     cfg_file.write_text("output: x.json\nfuture_key: 1\n", encoding="utf-8")
     cfg = load_config(config_path=cfg_file)
     assert cfg.output == "x.json"
+
+
+def test_llm_config_keys_and_cli_override(tmp_path: Path):
+    cfg_file = tmp_path / "c.yaml"
+    cfg_file.write_text(
+        "llm_model: from-file\n"
+        "llm_base_url: http://127.0.0.1:11434\n"
+        "llm_confidence_threshold: 0.7\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(
+        config_path=cfg_file,
+        llm_model_override="from-cli",
+        llm_base_url_override="http://localhost:9999/",
+    )
+    assert cfg.llm_model == "from-cli"
+    assert cfg.llm_base_url == "http://localhost:9999"
+    assert cfg.llm_confidence_threshold == 0.7

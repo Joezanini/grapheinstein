@@ -1,0 +1,17 @@
+{
+  "schema_version": "5.0.0",
+  "directed": true,
+  "multigraph": false,
+  "graph": {
+    "project_root": "/tmp",
+    "generated_at": "2026-07-17T00:00:00Z"
+  },
+  "nodes": [
+    {
+      "id": ".",
+      "type": "dir",
+      "metadata": {}
+    }
+  ],
+  "links": []
+}

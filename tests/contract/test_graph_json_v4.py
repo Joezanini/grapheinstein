@@ -17,8 +17,8 @@ def test_v4_heading_nodes_and_provenance(tmp_path: Path):
     out = tmp_path / "graph.json"
     index_project(FIXTURE, out, languages=[], include_docs=True, include_pdfs=False)
     data = load_artifact(out)
-    assert data["schema_version"] == "5.0.0"
-    assert SCHEMA_VERSION == "5.0.0"
+    assert data["schema_version"] == "6.0.0"
+    assert SCHEMA_VERSION == "6.0.0"
     assert data["graph"]["include_docs"] is True
     assert data["graph"]["include_pdfs"] is False
 
