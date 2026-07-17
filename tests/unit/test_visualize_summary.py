@@ -5,7 +5,7 @@ from grapheinstein.core.visualize import artifact_to_dot
 
 
 SAMPLE = {
-    "schema_version": "4.0.0",
+    "schema_version": "5.0.0",
     "directed": True,
     "multigraph": False,
     "graph": {"project_root": "/tmp/p", "generated_at": "2026-07-16T00:00:00Z"},
@@ -23,6 +23,22 @@ SAMPLE = {
                 "start_line": 1,
             },
         },
+        {
+            "id": "img.png::media_text::1",
+            "type": "media_text",
+            "metadata": {"file": "img.png", "text": "hello world", "source": "ocr"},
+        },
+        {
+            "id": "clip.wav::transcript_chunk::1",
+            "type": "transcript_chunk",
+            "metadata": {
+                "file": "clip.wav",
+                "text": "spoken words here",
+                "source": "whisper",
+                "start_sec": 0.0,
+                "end_sec": 1.5,
+            },
+        },
     ],
     "links": [
         {"source": ".", "target": "a.py", "type": "contains", "provenance": "extracted"},
@@ -34,6 +50,12 @@ SAMPLE = {
             "type": "defines",
             "provenance": "extracted",
         },
+        {
+            "source": "img.png::media_text::1",
+            "target": "a.py",
+            "type": "related_to",
+            "provenance": "inferred",
+        },
     ],
 }
 
@@ -43,13 +65,16 @@ def test_stats_from_artifact_counts():
     assert stats.file_count == 2
     assert stats.directory_count == 1
     assert stats.function_count == 1
-    assert stats.total_nodes == 4
+    assert stats.total_nodes == 6
     assert stats.contains_count == 2
     assert stats.references_count == 1
     assert stats.defines_count == 1
     assert stats.heading_count == 0
     assert stats.section_of_count == 0
     assert stats.mentions_count == 0
+    assert stats.media_text_count == 1
+    assert stats.transcript_chunk_count == 1
+    assert stats.related_to_count == 1
 
 
 def test_artifact_to_dot_includes_nodes_and_edges():

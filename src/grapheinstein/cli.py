@@ -10,7 +10,7 @@ import typer
 from rich.table import Table
 
 from grapheinstein.core.graph import GraphError, load_artifact, stats_from_artifact
-from grapheinstein.core.index import index_project
+from grapheinstein.core.index import MediaExtrasError, index_project
 from grapheinstein.core.parsers import LanguageError, parse_languages_csv
 from grapheinstein.core.visualize import load_graph_for_visualize, print_summary, write_dot
 from grapheinstein.utils import (
@@ -57,7 +57,9 @@ def prepend_index_if_needed(args: list[str]) -> list[str]:
 
 
 def _fail(message: str, code: int = 1) -> None:
-    console.print(f"[red]Error:[/red] {message}")
+    from rich.markup import escape
+
+    console.print(f"[red]Error:[/red] {escape(message)}")
     raise typer.Exit(code)
 
 
@@ -71,6 +73,8 @@ def _print_index_summary(stats, output_path: Path) -> None:
     table.add_row("Classes", str(stats.class_count))
     table.add_row("Methods", str(stats.method_count))
     table.add_row("Headings", str(stats.heading_count))
+    table.add_row("Media texts", str(stats.media_text_count))
+    table.add_row("Transcript chunks", str(stats.transcript_chunk_count))
     table.add_row("Total nodes", str(stats.total_nodes))
     table.add_row("Contains edges", str(stats.contains_count))
     table.add_row("References edges", str(stats.references_count))
@@ -79,6 +83,7 @@ def _print_index_summary(stats, output_path: Path) -> None:
     table.add_row("Calls edges", str(stats.calls_count))
     table.add_row("Section-of edges", str(stats.section_of_count))
     table.add_row("Mentions edges", str(stats.mentions_count))
+    table.add_row("Related-to edges", str(stats.related_to_count))
     if stats.parse_skips:
         table.add_row("Parse skips", str(stats.parse_skips))
     table.add_row("Output", str(output_path))
@@ -93,6 +98,7 @@ def _run_index(
     languages: Optional[str],
     include_docs: bool,
     include_pdfs: bool,
+    transcribe_media: bool,
 ) -> None:
     languages_override = None
     if languages is not None:
@@ -120,7 +126,10 @@ def _run_index(
             languages=list(cfg.languages),
             include_docs=include_docs,
             include_pdfs=include_pdfs,
+            transcribe_media=transcribe_media,
         )
+    except MediaExtrasError as exc:
+        _fail(str(exc), 1)
     except FileNotFoundError as exc:
         _fail(str(exc), 1)
     except NotADirectoryError as exc:
@@ -157,6 +166,11 @@ def index_cmd(
         "--include-pdfs",
         help="Enable PDF text extraction and section chunk enrichment",
     ),
+    transcribe_media: bool = typer.Option(
+        False,
+        "--transcribe-media",
+        help="Enable image OCR, A/V transcription, and media linking",
+    ),
     config: Optional[Path] = typer.Option(
         None,
         "--config",
@@ -171,6 +185,7 @@ def index_cmd(
         languages=languages,
         include_docs=include_docs,
         include_pdfs=include_pdfs,
+        transcribe_media=transcribe_media,
     )
 
 
@@ -216,6 +231,8 @@ def status_cmd(
     table.add_row("Classes", str(stats.class_count))
     table.add_row("Methods", str(stats.method_count))
     table.add_row("Headings", str(stats.heading_count))
+    table.add_row("Media texts", str(stats.media_text_count))
+    table.add_row("Transcript chunks", str(stats.transcript_chunk_count))
     table.add_row("Total nodes", str(stats.total_nodes))
     table.add_row("Contains edges", str(stats.contains_count))
     table.add_row("References edges", str(stats.references_count))
@@ -224,6 +241,7 @@ def status_cmd(
     table.add_row("Calls edges", str(stats.calls_count))
     table.add_row("Section-of edges", str(stats.section_of_count))
     table.add_row("Mentions edges", str(stats.mentions_count))
+    table.add_row("Related-to edges", str(stats.related_to_count))
     table.add_row("Graph path", stats.graph_path)
     if stats.project_root:
         table.add_row("Project root", stats.project_root)

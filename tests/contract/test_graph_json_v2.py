@@ -13,8 +13,8 @@ def test_v3_nodes_and_edge_provenance(tmp_path: Path):
     index_project(FIXTURE, out, languages=["python"])
     data = load_artifact(out)
 
-    assert data["schema_version"] == "4.0.0"
-    assert SCHEMA_VERSION == "4.0.0"
+    assert data["schema_version"] == "5.0.0"
+    assert SCHEMA_VERSION == "5.0.0"
 
     for node in data["nodes"]:
         assert "kind" not in node
@@ -52,5 +52,5 @@ def test_reject_schema_v2():
 def test_in_memory_artifact_matches_contract():
     graph = build_inventory_graph(FIXTURE, languages=["python"])
     data = to_artifact_dict(graph)
-    assert data["schema_version"] == "4.0.0"
+    assert data["schema_version"] == "5.0.0"
     assert all("type" in n and "metadata" in n for n in data["nodes"])

@@ -29,6 +29,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+media = [
+  "pytesseract>=0.3.10",
+  "Pillow>=10.0",
+  "faster-whisper>=1.0",
+]
 
 [project.scripts]
 grapheinstein = "grapheinstein.cli:app"

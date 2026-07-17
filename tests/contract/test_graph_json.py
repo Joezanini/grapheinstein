@@ -11,7 +11,7 @@ def test_graph_json_contract_shape(tmp_path: Path):
     data = to_artifact_dict(graph)
 
     assert data["schema_version"] == SCHEMA_VERSION
-    assert SCHEMA_VERSION == "4.0.0"
+    assert SCHEMA_VERSION == "5.0.0"
     assert data["directed"] is True
     assert data["multigraph"] is False
     assert "project_root" in data["graph"]

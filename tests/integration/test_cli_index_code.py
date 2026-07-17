@@ -17,7 +17,7 @@ def test_index_code_project_entities(tmp_path: Path):
     )
     assert result.exit_code == 0, result.output
     data = json.loads(out.read_text(encoding="utf-8"))
-    assert data["schema_version"] == "4.0.0"
+    assert data["schema_version"] == "5.0.0"
 
     ids = {n["id"] for n in data["nodes"]}
     assert "src/app.py::function::greet::1" in ids

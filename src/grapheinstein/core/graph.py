@@ -1,4 +1,4 @@
-"""NetworkX graph construction and graph.json persistence (schema 4.0.0)."""
+"""NetworkX graph construction and graph.json persistence (schema 5.0.0)."""
 
 from __future__ import annotations
 
@@ -12,19 +12,28 @@ from typing import Any
 import networkx as nx
 from networkx.readwrite import json_graph
 
-SCHEMA_VERSION = "4.0.0"
+SCHEMA_VERSION = "5.0.0"
 FILE_DIR_TYPES = frozenset({"file", "dir"})
 CODE_NODE_TYPES = frozenset({"function", "class", "method"})
 HEADING_NODE_TYPE = "heading"
-NODE_TYPES = FILE_DIR_TYPES | CODE_NODE_TYPES | frozenset({HEADING_NODE_TYPE})
+MEDIA_TEXT_NODE_TYPE = "media_text"
+TRANSCRIPT_CHUNK_NODE_TYPE = "transcript_chunk"
+NODE_TYPES = FILE_DIR_TYPES | CODE_NODE_TYPES | frozenset(
+    {HEADING_NODE_TYPE, MEDIA_TEXT_NODE_TYPE, TRANSCRIPT_CHUNK_NODE_TYPE}
+)
 INVENTORY_EDGE_TYPES = frozenset({"contains", "references"})
 CODE_EDGE_TYPES = frozenset({"defines", "imports", "calls"})
 DOC_EDGE_TYPES = frozenset({"section_of", "mentions"})
-EDGE_TYPES = INVENTORY_EDGE_TYPES | CODE_EDGE_TYPES | DOC_EDGE_TYPES
+MEDIA_EDGE_TYPES = frozenset({"related_to"})
+EDGE_TYPES = INVENTORY_EDGE_TYPES | CODE_EDGE_TYPES | DOC_EDGE_TYPES | MEDIA_EDGE_TYPES
 PROVENANCE_VALUES = frozenset({"extracted", "inferred"})
 CODE_METADATA_REQUIRED = frozenset({"name", "language", "file", "start_line"})
 HEADING_METADATA_REQUIRED = frozenset({"name", "file", "source"})
 HEADING_SOURCES = frozenset({"markdown", "txt", "rst", "pdf"})
+MEDIA_TEXT_METADATA_REQUIRED = frozenset({"file", "text", "source"})
+TRANSCRIPT_CHUNK_METADATA_REQUIRED = frozenset(
+    {"file", "text", "source", "start_sec", "end_sec"}
+)
 
 
 @dataclass(frozen=True)
@@ -35,6 +44,8 @@ class GraphStats:
     class_count: int
     method_count: int
     heading_count: int
+    media_text_count: int
+    transcript_chunk_count: int
     total_nodes: int
     contains_count: int
     references_count: int
@@ -43,6 +54,7 @@ class GraphStats:
     calls_count: int
     section_of_count: int
     mentions_count: int
+    related_to_count: int
     project_root: str | None
     graph_path: str
     parse_skips: int = 0
@@ -203,18 +215,113 @@ def add_mentions_edge(graph: nx.DiGraph, source_id: str, target_id: str) -> bool
     return _add_typed_edge(graph, source_id, target_id, "mentions")
 
 
-def _add_typed_edge(graph: nx.DiGraph, source_id: str, target_id: str, edge_type: str) -> bool:
+def media_text_id(file_id: str, ordinal: int) -> str:
+    return f"{file_id}::media_text::{int(ordinal)}"
+
+
+def transcript_chunk_id(file_id: str, ordinal: int) -> str:
+    return f"{file_id}::transcript_chunk::{int(ordinal)}"
+
+
+def add_media_text(
+    graph: nx.DiGraph,
+    *,
+    file_id: str,
+    text: str,
+    source: str = "ocr",
+    ordinal: int = 1,
+    engine: str | None = "tesseract",
+) -> str:
+    """Add a media_text node. Returns node id."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        raise ValueError("media_text requires non-empty text")
+    if source != "ocr":
+        raise ValueError(f"Invalid media_text source: {source}")
+    node_id = media_text_id(file_id, ordinal)
+    metadata: dict[str, Any] = {
+        "file": file_id,
+        "text": cleaned,
+        "source": source,
+        "ordinal": int(ordinal),
+    }
+    if engine:
+        metadata["engine"] = engine
+    if node_id not in graph:
+        add_node(graph, node_id, MEDIA_TEXT_NODE_TYPE, metadata=metadata)
+    return node_id
+
+
+def add_transcript_chunk(
+    graph: nx.DiGraph,
+    *,
+    file_id: str,
+    text: str,
+    start_sec: float,
+    end_sec: float,
+    source: str = "whisper",
+    ordinal: int = 1,
+) -> str:
+    """Add a transcript_chunk node. Returns node id."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        raise ValueError("transcript_chunk requires non-empty text")
+    if source != "whisper":
+        raise ValueError(f"Invalid transcript_chunk source: {source}")
+    if float(end_sec) < float(start_sec):
+        raise ValueError("transcript_chunk end_sec must be >= start_sec")
+    node_id = transcript_chunk_id(file_id, ordinal)
+    metadata: dict[str, Any] = {
+        "file": file_id,
+        "text": cleaned,
+        "source": source,
+        "start_sec": float(start_sec),
+        "end_sec": float(end_sec),
+        "ordinal": int(ordinal),
+    }
+    if node_id not in graph:
+        add_node(graph, node_id, TRANSCRIPT_CHUNK_NODE_TYPE, metadata=metadata)
+    return node_id
+
+
+def add_related_to_edge(
+    graph: nx.DiGraph,
+    source_id: str,
+    target_id: str,
+    *,
+    reason: str | None = None,
+) -> bool:
+    """Add related_to edge with provenance inferred."""
+    ok = _add_typed_edge(
+        graph, source_id, target_id, "related_to", provenance="inferred"
+    )
+    if ok and reason and graph.has_edge(source_id, target_id):
+        graph.edges[source_id, target_id]["reason"] = reason
+    return ok
+
+
+def _add_typed_edge(
+    graph: nx.DiGraph,
+    source_id: str,
+    target_id: str,
+    edge_type: str,
+    *,
+    provenance: str = "extracted",
+) -> bool:
     if source_id == target_id:
         return False
     if source_id not in graph or target_id not in graph:
         return False
+    if provenance not in PROVENANCE_VALUES:
+        raise ValueError(f"Invalid provenance: {provenance}")
     # DiGraph allows one edge per pair; skip if same type already present
     if graph.has_edge(source_id, target_id):
         if graph.edges[source_id, target_id].get("type") == edge_type:
             return False
         # Different relationship already occupies the pair — skip to keep Multigraph=false
         return False
-    graph.add_edge(source_id, target_id, type=edge_type, provenance="extracted")
+    attrs: dict[str, Any] = {"type": edge_type, "provenance": provenance}
+    graph.add_edge(source_id, target_id, **attrs)
     return True
 
 
@@ -251,14 +358,15 @@ def to_artifact_dict(graph: nx.DiGraph) -> dict[str, Any]:
     data["nodes"] = nodes
     links = []
     for link in data.get("links", []):
-        links.append(
-            {
-                "source": link["source"],
-                "target": link["target"],
-                "type": link.get("type", "contains"),
-                "provenance": link.get("provenance", "extracted"),
-            }
-        )
+        entry: dict[str, Any] = {
+            "source": link["source"],
+            "target": link["target"],
+            "type": link.get("type", "contains"),
+            "provenance": link.get("provenance", "extracted"),
+        }
+        if link.get("reason"):
+            entry["reason"] = link["reason"]
+        links.append(entry)
     data["links"] = links
     graph_meta: dict[str, Any] = {
         "project_root": graph.graph.get("project_root", ""),
@@ -271,6 +379,8 @@ def to_artifact_dict(graph: nx.DiGraph) -> dict[str, Any]:
         graph_meta["include_docs"] = bool(graph.graph["include_docs"])
     if "include_pdfs" in graph.graph:
         graph_meta["include_pdfs"] = bool(graph.graph["include_pdfs"])
+    if "transcribe_media" in graph.graph:
+        graph_meta["transcribe_media"] = bool(graph.graph["transcribe_media"])
     if "parse_skips" in graph.graph:
         graph_meta["parse_skips"] = int(graph.graph["parse_skips"] or 0)
     data["graph"] = graph_meta
@@ -344,6 +454,50 @@ def _validate_heading_metadata(node: dict[str, Any], path: Path) -> None:
         )
 
 
+def _validate_media_text_metadata(node: dict[str, Any], path: Path) -> None:
+    meta = node["metadata"]
+    missing = MEDIA_TEXT_METADATA_REQUIRED - set(meta)
+    if missing:
+        raise GraphError(
+            f"Graph file {path} media_text {node.get('id')!r} missing metadata keys "
+            f"{sorted(missing)}"
+        )
+    if not isinstance(meta.get("file"), str):
+        raise GraphError(f"Graph file {path} media_text file must be a string")
+    if not isinstance(meta.get("text"), str) or not meta.get("text").strip():
+        raise GraphError(f"Graph file {path} media_text text must be a non-empty string")
+    if meta.get("source") != "ocr":
+        raise GraphError(f"Graph file {path} media_text source must be 'ocr'")
+
+
+def _validate_transcript_chunk_metadata(node: dict[str, Any], path: Path) -> None:
+    meta = node["metadata"]
+    missing = TRANSCRIPT_CHUNK_METADATA_REQUIRED - set(meta)
+    if missing:
+        raise GraphError(
+            f"Graph file {path} transcript_chunk {node.get('id')!r} missing metadata keys "
+            f"{sorted(missing)}"
+        )
+    if not isinstance(meta.get("file"), str):
+        raise GraphError(f"Graph file {path} transcript_chunk file must be a string")
+    if not isinstance(meta.get("text"), str) or not meta.get("text").strip():
+        raise GraphError(
+            f"Graph file {path} transcript_chunk text must be a non-empty string"
+        )
+    if meta.get("source") != "whisper":
+        raise GraphError(f"Graph file {path} transcript_chunk source must be 'whisper'")
+    start_sec = meta.get("start_sec")
+    end_sec = meta.get("end_sec")
+    if not isinstance(start_sec, (int, float)) or isinstance(start_sec, bool):
+        raise GraphError(f"Graph file {path} transcript_chunk start_sec must be a number")
+    if not isinstance(end_sec, (int, float)) or isinstance(end_sec, bool):
+        raise GraphError(f"Graph file {path} transcript_chunk end_sec must be a number")
+    if float(end_sec) < float(start_sec):
+        raise GraphError(
+            f"Graph file {path} transcript_chunk end_sec must be >= start_sec"
+        )
+
+
 def validate_artifact(data: dict[str, Any], path: Path) -> None:
     for key in ("schema_version", "nodes", "links", "graph"):
         if key not in data:
@@ -378,6 +532,10 @@ def validate_artifact(data: dict[str, Any], path: Path) -> None:
             _validate_code_metadata(node, path)
         if node["type"] == HEADING_NODE_TYPE:
             _validate_heading_metadata(node, path)
+        if node["type"] == MEDIA_TEXT_NODE_TYPE:
+            _validate_media_text_metadata(node, path)
+        if node["type"] == TRANSCRIPT_CHUNK_NODE_TYPE:
+            _validate_transcript_chunk_metadata(node, path)
 
     for link in data["links"]:
         if not isinstance(link, dict):
@@ -390,6 +548,10 @@ def validate_artifact(data: dict[str, Any], path: Path) -> None:
         if link["provenance"] not in PROVENANCE_VALUES:
             raise GraphError(
                 f"Graph file {path} has invalid provenance {link['provenance']!r}"
+            )
+        if link["type"] == "related_to" and link["provenance"] != "inferred":
+            raise GraphError(
+                f"Graph file {path} related_to edges must have provenance 'inferred'"
             )
 
 
@@ -430,6 +592,8 @@ def stats_from_artifact(
     class_count = sum(1 for n in nodes if n.get("type") == "class")
     method_count = sum(1 for n in nodes if n.get("type") == "method")
     heading_count = sum(1 for n in nodes if n.get("type") == "heading")
+    media_text_count = sum(1 for n in nodes if n.get("type") == "media_text")
+    transcript_chunk_count = sum(1 for n in nodes if n.get("type") == "transcript_chunk")
     contains_count = sum(1 for link in links if link.get("type") == "contains")
     references_count = sum(1 for link in links if link.get("type") == "references")
     defines_count = sum(1 for link in links if link.get("type") == "defines")
@@ -437,6 +601,7 @@ def stats_from_artifact(
     calls_count = sum(1 for link in links if link.get("type") == "calls")
     section_of_count = sum(1 for link in links if link.get("type") == "section_of")
     mentions_count = sum(1 for link in links if link.get("type") == "mentions")
+    related_to_count = sum(1 for link in links if link.get("type") == "related_to")
     project_root = None
     graph_meta = data.get("graph") or {}
     if isinstance(graph_meta, dict):
@@ -448,6 +613,8 @@ def stats_from_artifact(
         class_count=class_count,
         method_count=method_count,
         heading_count=heading_count,
+        media_text_count=media_text_count,
+        transcript_chunk_count=transcript_chunk_count,
         total_nodes=len(nodes),
         contains_count=contains_count,
         references_count=references_count,
@@ -456,6 +623,7 @@ def stats_from_artifact(
         calls_count=calls_count,
         section_of_count=section_of_count,
         mentions_count=mentions_count,
+        related_to_count=related_to_count,
         project_root=project_root,
         graph_path=str(graph_path.resolve()),
         parse_skips=parse_skips,

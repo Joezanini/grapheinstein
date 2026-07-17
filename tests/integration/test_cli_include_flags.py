@@ -22,7 +22,7 @@ def test_default_no_structure(tmp_path: Path):
     result = runner.invoke(app_typer, ["index", str(FIXTURE), "-o", str(out)])
     assert result.exit_code == 0, result.output
     data = json.loads(out.read_text())
-    assert data["schema_version"] == "4.0.0"
+    assert data["schema_version"] == "5.0.0"
     assert not any(n["type"] == "heading" for n in data["nodes"])
     assert data["graph"]["include_docs"] is False
     assert data["graph"]["include_pdfs"] is False

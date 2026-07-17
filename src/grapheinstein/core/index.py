@@ -19,6 +19,9 @@ from grapheinstein.core.graph import (
 )
 from grapheinstein.core.parsers import DEFAULT_LANGUAGES, merge_code_structure
 from grapheinstein.core.parsers.docs import merge_docs_structure
+from grapheinstein.core.parsers.media_av import merge_media_av
+from grapheinstein.core.parsers.media_link import merge_media_links
+from grapheinstein.core.parsers.media_ocr import MediaExtrasError, ensure_media_deps, merge_media_ocr
 from grapheinstein.core.parsers.pdf import merge_pdf_structure
 from grapheinstein.core.references import add_reference_edges
 from grapheinstein.utils import resolve_project_path
@@ -115,8 +118,14 @@ def build_inventory_graph(
     languages: Sequence[str] | None = None,
     include_docs: bool = False,
     include_pdfs: bool = False,
+    transcribe_media: bool = False,
+    ocr_extract=None,
+    av_transcribe=None,
+    skip_media_deps_check: bool = False,
 ):
     root = resolve_project_path(project_root)
+    if transcribe_media and not skip_media_deps_check:
+        ensure_media_deps()
     graph = new_inventory_graph(root)
     for rel, node_type, metadata in discover_paths(root):
         if rel == ".":
@@ -139,10 +148,15 @@ def build_inventory_graph(
     graph.graph["languages"] = list(enabled)
     graph.graph["include_docs"] = bool(include_docs)
     graph.graph["include_pdfs"] = bool(include_pdfs)
+    graph.graph["transcribe_media"] = bool(transcribe_media)
     if include_docs:
         skips += merge_docs_structure(graph, root)
     if include_pdfs:
         skips += merge_pdf_structure(graph, root)
+    if transcribe_media:
+        skips += merge_media_ocr(graph, root, extract_text=ocr_extract)
+        skips += merge_media_av(graph, root, transcribe=av_transcribe)
+        merge_media_links(graph)
     graph.graph["parse_skips"] = skips
     return graph
 
@@ -154,6 +168,10 @@ def index_project(
     languages: Sequence[str] | None = None,
     include_docs: bool = False,
     include_pdfs: bool = False,
+    transcribe_media: bool = False,
+    ocr_extract=None,
+    av_transcribe=None,
+    skip_media_deps_check: bool = False,
 ):
     """Index project and write graph.json artifact. Returns (path, stats)."""
     root = resolve_project_path(project_root)
@@ -162,9 +180,23 @@ def index_project(
         languages=languages,
         include_docs=include_docs,
         include_pdfs=include_pdfs,
+        transcribe_media=transcribe_media,
+        ocr_extract=ocr_extract,
+        av_transcribe=av_transcribe,
+        skip_media_deps_check=skip_media_deps_check,
     )
     written = save_graph(graph, output_path)
     artifact = to_artifact_dict(graph)
     parse_skips = int(graph.graph.get("parse_skips") or 0)
     stats = stats_from_artifact(artifact, written, parse_skips=parse_skips)
     return written, stats
+
+
+# Re-export for callers that catch missing extras
+__all__ = [
+    "MediaExtrasError",
+    "build_inventory_graph",
+    "discover_paths",
+    "index_project",
+    "load_gitignore_spec",
+]
