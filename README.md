@@ -9,6 +9,16 @@ Schema version: **6.0.0**.
 ## Install
 
 ```bash
+pip install grapheinstein
+# Optional local HTTP API:
+# pip install 'grapheinstein[serve]'
+# Optional OCR / audio extras:
+# pip install 'grapheinstein[media]'
+```
+
+### From source
+
+```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"

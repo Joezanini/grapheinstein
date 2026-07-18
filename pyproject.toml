@@ -8,6 +8,31 @@ version = "0.1.0"
 description = "Local-first project knowledge graph CLI"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "Joe Zanini", email = "jozanini@users.noreply.github.com" },
+]
+keywords = [
+  "cli",
+  "knowledge-graph",
+  "code-analysis",
+  "local-first",
+  "offline",
+  "tree-sitter",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development",
+  "Topic :: Utilities",
+]
 dependencies = [
   "typer>=0.12",
   "networkx>=3.2",
@@ -41,6 +66,11 @@ serve = [
 
 [project.scripts]
 grapheinstein = "grapheinstein.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/Joezanini/grapheinstein"
+Repository = "https://github.com/Joezanini/grapheinstein"
+Issues = "https://github.com/Joezanini/grapheinstein/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

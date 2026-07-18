@@ -74,3 +74,29 @@ Optional dependency groups (for example `[serve]` for `grapheinstein serve`) are
 ```bash
 pip install -e ".[dev,serve]"
 ```
+
+## Release (maintainers)
+
+Releases publish to PyPI via GitHub Actions Trusted Publishing when a version tag is pushed.
+
+1. Bump the version in **both** `pyproject.toml` (`[project].version`) and `src/grapheinstein/__init__.py` (`__version__`).
+2. Commit the bump (e.g. `Release 0.1.0`).
+3. Tag and push:
+   ```bash
+   git tag v0.1.0
+   git push origin main
+   git push origin v0.1.0
+   ```
+4. The [Publish to PyPI](.github/workflows/publish.yml) workflow builds the sdist/wheel, smoke-tests `grapheinstein --help`, and uploads with OIDC.
+
+### One-time PyPI Trusted Publisher setup
+
+Before the first tag publish:
+
+1. On [PyPI](https://pypi.org/), create the `grapheinstein` project (or use a pending publisher).
+2. Add a Trusted Publisher:
+   - Owner: `Joezanini`
+   - Repository: `grapheinstein`
+   - Workflow: `publish.yml`
+   - Environment: `pypi`
+3. In the GitHub repo, create an Environment named `pypi` (optional protection rules as you prefer).
