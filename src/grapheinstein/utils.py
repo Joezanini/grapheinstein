@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 import yaml
 from loguru import logger
 from rich.console import Console
 
-from grapheinstein.core.parsers.llm_ollama import DEFAULT_BASE_URL, DEFAULT_MODEL
 from grapheinstein.core.parsers.llm_enrich import DEFAULT_CONFIDENCE_THRESHOLD
+from grapheinstein.core.parsers.llm_ollama import DEFAULT_BASE_URL, DEFAULT_MODEL
 from grapheinstein.core.parsers.registry import (
     DEFAULT_LANGUAGES,
     LanguageError,

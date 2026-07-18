@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 from grapheinstein.core.graph import SCHEMA_VERSION, load_artifact
@@ -30,6 +29,7 @@ def test_v3_code_nodes_and_provenance(tmp_path: Path):
 
 def test_reject_v2_artifact():
     import pytest
+
     from grapheinstein.core.graph import GraphError
 
     with pytest.raises(GraphError, match="unsupported|Re-index|schema_version"):

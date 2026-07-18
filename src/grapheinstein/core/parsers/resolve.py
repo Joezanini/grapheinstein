@@ -8,14 +8,26 @@ from typing import TYPE_CHECKING
 import networkx as nx
 from loguru import logger
 
-from grapheinstein.core.cache import KIND_AST, content_hash_bytes, pickle_dumps, pickle_loads, settings_hash
+from grapheinstein.core.cache import (
+    KIND_AST,
+    content_hash_bytes,
+    pickle_dumps,
+    pickle_loads,
+    settings_hash,
+)
 from grapheinstein.core.graph import (
     add_calls_edge,
     add_code_entity,
     add_defines_edge,
     add_imports_edge,
 )
-from grapheinstein.core.parsers.extract import CallFact, CodeEntity, ExtractResult, ImportFact, extract_file
+from grapheinstein.core.parsers.extract import (
+    CallFact,
+    CodeEntity,
+    ExtractResult,
+    ImportFact,
+    extract_file,
+)
 from grapheinstein.core.parsers.registry import language_for_path
 
 if TYPE_CHECKING:
@@ -209,7 +221,7 @@ def _extract_file_cached(
     lang: str,
     *,
     file_id: str,
-    cache: "CacheStore | None",
+    cache: CacheStore | None,
 ) -> ExtractResult:
     if cache is None:
         return extract_file(path, lang, file_id=file_id)
@@ -242,7 +254,7 @@ def merge_code_structure(
     graph: nx.DiGraph,
     project_root: Path,
     enabled_languages: list[str],
-    cache: "CacheStore | None" = None,
+    cache: CacheStore | None = None,
 ) -> int:
     """
     Walk file nodes, extract structure for enabled languages, merge into graph.

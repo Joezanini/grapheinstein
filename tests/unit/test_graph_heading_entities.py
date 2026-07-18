@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import networkx as nx
-
 from grapheinstein.core.graph import (
     add_heading,
     add_mentions_edge,

@@ -1,11 +1,8 @@
 from pathlib import Path
 
-import networkx as nx
-
 from grapheinstein.core.graph import add_code_entity, add_node, new_inventory_graph
-from grapheinstein.core.parsers.extract import ImportFact, CallFact
+from grapheinstein.core.parsers.extract import CallFact, ImportFact
 from grapheinstein.core.parsers.resolve import apply_edges, apply_entities, resolve_import_target
-from grapheinstein.core.parsers.extract import CodeEntity
 
 
 def test_resolve_unique_import_to_symbol():

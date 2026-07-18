@@ -74,6 +74,13 @@ Re-indexing an unchanged project reuses the cache under `cache_dir` for faster r
 
 ```bash
 pytest
+ruff check src tests
 ```
 
 Feature quickstarts live under `specs/*/quickstart.md` (e.g. `specs/011-config-cache-init/quickstart.md`).
+
+## Contributing
+
+Community contributions are welcome — bug fixes, docs, tests, and features that fit the project’s local-first CLI goals.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, validation, and how to propose a change.

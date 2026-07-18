@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
-from typing import Any, Callable, Sequence
+from typing import Any
 
 from grapheinstein.core.graph import CONCEPT_NODE_TYPE
 
@@ -91,7 +92,7 @@ def cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
     dot = 0.0
     na = 0.0
     nb = 0.0
-    for x, y in zip(a, b):
+    for x, y in zip(a, b, strict=True):
         dot += float(x) * float(y)
         na += float(x) * float(x)
         nb += float(y) * float(y)
@@ -139,7 +140,7 @@ def score_nodes(
                     f"embed_fn returned {len(vectors)} vectors for {len(texts)} texts"
                 )
             q_vec = vectors[0]
-            for vec, (_, nid, _, _) in zip(vectors[1:], pool):
+            for vec, (_, nid, _, _) in zip(vectors[1:], pool, strict=True):
                 embedding_by_id[nid] = cosine_similarity(q_vec, vec)
         except Exception as exc:  # noqa: BLE001 — soft-skip embeddings
             embed_note = f"Vector matching skipped: {exc}"

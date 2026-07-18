@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import List, Optional
 
 import typer
 from rich.table import Table
 
 from grapheinstein.api import index as api_index
 from grapheinstein.api import query as api_query
+from grapheinstein.core.cache import CacheStore
 from grapheinstein.core.explain import ExplainError, NoMatchError, explain_concept
 from grapheinstein.core.graph import GraphError, load_artifact, stats_from_artifact
 from grapheinstein.core.index import MediaExtrasError
@@ -29,10 +29,9 @@ from grapheinstein.core.query import (
     QueryError,
 )
 from grapheinstein.core.visualize import load_graph_for_visualize, print_summary, write_dot
-from grapheinstein.core.cache import CacheStore
 from grapheinstein.utils import (
-    ConfigError,
     USER_CONFIG_PATH,
+    ConfigError,
     console,
     load_config,
     setup_logging,
@@ -163,16 +162,16 @@ def _print_index_summary(stats, output_path: Path) -> None:
 def _run_index(
     project_path: Path,
     *,
-    output: Optional[Path],
-    config: Optional[Path],
-    languages: Optional[str],
+    output: Path | None,
+    config: Path | None,
+    languages: str | None,
     include_docs: bool,
     include_pdfs: bool,
     transcribe_media: bool,
     enrich_llm: bool,
-    llm_model: Optional[str],
-    llm_base_url: Optional[str],
-    embedding_model: Optional[str],
+    llm_model: str | None,
+    llm_base_url: str | None,
+    embedding_model: str | None,
     compress: bool,
     versioned: bool,
 ) -> None:
@@ -213,7 +212,7 @@ def _run_index(
 
 @cli.command("init")
 def init_cmd(
-    output: Optional[Path] = typer.Option(
+    output: Path | None = typer.Option(
         None,
         "--output",
         "-o",
@@ -258,13 +257,13 @@ def index_cmd(
         ...,
         help="Project folder to index (respects .gitignore and config ignored_patterns)",
     ),
-    output: Optional[Path] = typer.Option(
+    output: Path | None = typer.Option(
         None,
         "--output",
         "-o",
         help="Path for graph.json artifact (default: graph.json or config)",
     ),
-    languages: Optional[str] = typer.Option(
+    languages: str | None = typer.Option(
         None,
         "--languages",
         help="Comma-separated languages for structure extraction (default: all)",
@@ -289,17 +288,17 @@ def index_cmd(
         "--enrich-llm",
         help="Enable local LLM concept/relation enrichment via Ollama",
     ),
-    llm_model: Optional[str] = typer.Option(
+    llm_model: str | None = typer.Option(
         None,
         "--llm-model",
         help="Ollama model tag for LLM enrichment (default from config)",
     ),
-    embedding_model: Optional[str] = typer.Option(
+    embedding_model: str | None = typer.Option(
         None,
         "--embedding-model",
         help="Ollama model tag for embeddings (default from config or llm_model)",
     ),
-    llm_base_url: Optional[str] = typer.Option(
+    llm_base_url: str | None = typer.Option(
         None,
         "--llm-base-url",
         help="Ollama base URL (default: http://localhost:11434 or config)",
@@ -314,7 +313,7 @@ def index_cmd(
         "--versioned",
         help="Also write next graph_vN.json[.gz] snapshot beside primary output",
     ),
-    config: Optional[Path] = typer.Option(
+    config: Path | None = typer.Option(
         None,
         "--config",
         help="YAML config file (overrides ~/.grapheinstein/config.yaml)",
@@ -340,7 +339,7 @@ def index_cmd(
 
 @cli.command("merge")
 def merge_cmd(
-    inputs: List[Path] = typer.Argument(
+    inputs: list[Path] = typer.Argument(
         ...,
         help="Two or more graph.json / graph.json.gz artifacts to combine",
     ),
@@ -355,7 +354,7 @@ def merge_cmd(
         "--compress",
         help="Write gzip-compressed merged artifact (.json.gz)",
     ),
-    config: Optional[Path] = typer.Option(
+    config: Path | None = typer.Option(
         None,
         "--config",
         help="YAML config file (overrides ~/.grapheinstein/config.yaml)",
@@ -400,13 +399,13 @@ def merge_cmd(
 
 @cli.command("status")
 def status_cmd(
-    output: Optional[Path] = typer.Option(
+    output: Path | None = typer.Option(
         None,
         "--output",
         "-o",
         help="Path to existing graph.json artifact",
     ),
-    config: Optional[Path] = typer.Option(
+    config: Path | None = typer.Option(
         None,
         "--config",
         help="YAML config file (overrides ~/.grapheinstein/config.yaml)",
@@ -475,32 +474,32 @@ def explain_cmd(
         "-o",
         help="Destination path for explanation subgraph",
     ),
-    hops: Optional[int] = typer.Option(
+    hops: int | None = typer.Option(
         None,
         "--hops",
         help="Undirected neighborhood radius (1 or 2)",
     ),
-    top_n: Optional[int] = typer.Option(
+    top_n: int | None = typer.Option(
         None,
         "--top-n",
         help="Maximum primary matches to include",
     ),
-    match_threshold: Optional[float] = typer.Option(
+    match_threshold: float | None = typer.Option(
         None,
         "--match-threshold",
         help="Minimum match score in [0.0, 1.0]",
     ),
-    llm_model: Optional[str] = typer.Option(
+    llm_model: str | None = typer.Option(
         None,
         "--llm-model",
         help="Local Ollama model for summary text (default from config)",
     ),
-    embedding_model: Optional[str] = typer.Option(
+    embedding_model: str | None = typer.Option(
         None,
         "--embedding-model",
         help="Local Ollama model for embeddings (default from config or llm_model)",
     ),
-    llm_base_url: Optional[str] = typer.Option(
+    llm_base_url: str | None = typer.Option(
         None,
         "--llm-base-url",
         help="Local Ollama base URL",
@@ -510,7 +509,7 @@ def explain_cmd(
         "--no-summary",
         help="Skip local LLM summary; still write subgraph",
     ),
-    config: Optional[Path] = typer.Option(
+    config: Path | None = typer.Option(
         None,
         "--config",
         help="YAML config file (overrides ~/.grapheinstein/config.yaml)",
@@ -593,33 +592,33 @@ def path_cmd(
         "-i",
         help="Path to existing graph.json artifact",
     ),
-    output_path: Optional[Path] = typer.Option(
+    output_path: Path | None = typer.Option(
         None,
         "--output",
         "-o",
         help="Optional path to write path-answer JSON (same document as stdout)",
     ),
-    match_threshold: Optional[float] = typer.Option(
+    match_threshold: float | None = typer.Option(
         None,
         "--match-threshold",
         help="Minimum match score in [0.0, 1.0] per endpoint",
     ),
-    max_hops: Optional[int] = typer.Option(
+    max_hops: int | None = typer.Option(
         None,
         "--max-hops",
         help="Maximum accepted path edge count",
     ),
-    llm_model: Optional[str] = typer.Option(
+    llm_model: str | None = typer.Option(
         None,
         "--llm-model",
         help="Local Ollama model for explanation polish (default from config)",
     ),
-    embedding_model: Optional[str] = typer.Option(
+    embedding_model: str | None = typer.Option(
         None,
         "--embedding-model",
         help="Local Ollama model for embeddings (default from config or llm_model)",
     ),
-    llm_base_url: Optional[str] = typer.Option(
+    llm_base_url: str | None = typer.Option(
         None,
         "--llm-base-url",
         help="Local Ollama base URL",
@@ -629,7 +628,7 @@ def path_cmd(
         "--no-llm-explain",
         help="Skip LLM polish; keep deterministic explanation",
     ),
-    config: Optional[Path] = typer.Option(
+    config: Path | None = typer.Option(
         None,
         "--config",
         help="YAML config file (overrides ~/.grapheinstein/config.yaml)",
@@ -718,32 +717,32 @@ def query_cmd(
         "-o",
         help="Destination path for supporting subgraph",
     ),
-    k: Optional[int] = typer.Option(
+    k: int | None = typer.Option(
         None,
         "--k",
         help="Maximum primary retrieval hits (1-200)",
     ),
-    hops: Optional[int] = typer.Option(
+    hops: int | None = typer.Option(
         None,
         "--hops",
         help="Undirected expansion radius (1 or 2)",
     ),
-    match_threshold: Optional[float] = typer.Option(
+    match_threshold: float | None = typer.Option(
         None,
         "--match-threshold",
         help="Minimum hit score in [0.0, 1.0]",
     ),
-    llm_model: Optional[str] = typer.Option(
+    llm_model: str | None = typer.Option(
         None,
         "--llm-model",
         help="Local Ollama model for answer text (default from config)",
     ),
-    embedding_model: Optional[str] = typer.Option(
+    embedding_model: str | None = typer.Option(
         None,
         "--embedding-model",
         help="Local Ollama model for embeddings (default from config or llm_model)",
     ),
-    llm_base_url: Optional[str] = typer.Option(
+    llm_base_url: str | None = typer.Option(
         None,
         "--llm-base-url",
         help="Local Ollama base URL",
@@ -753,7 +752,7 @@ def query_cmd(
         "--no-answer",
         help="Skip local LLM answer; still write subgraph and visualization summary",
     ),
-    config: Optional[Path] = typer.Option(
+    config: Path | None = typer.Option(
         None,
         "--config",
         help="YAML config file (overrides ~/.grapheinstein/config.yaml)",
@@ -881,12 +880,12 @@ def visualize_cmd(
         "-i",
         help="Path to existing graph.json artifact",
     ),
-    dot: Optional[Path] = typer.Option(
+    dot: Path | None = typer.Option(
         None,
         "--dot",
         help="Optional path to write DOT export (summary still prints)",
     ),
-    config: Optional[Path] = typer.Option(
+    config: Path | None = typer.Option(
         None,
         "--config",
         help="YAML config file (overrides ~/.grapheinstein/config.yaml)",
@@ -918,7 +917,7 @@ def visualize_cmd(
 
 
 def app(
-    args: Optional[list[str]] = None,
+    args: list[str] | None = None,
     *,
     prog_name: str = "grapheinstein",
     standalone_mode: bool = True,

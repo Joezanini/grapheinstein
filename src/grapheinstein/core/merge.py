@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +14,7 @@ class MergeConflictError(GraphError):
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _node_payload(node: dict[str, Any]) -> tuple[Any, Any]:
@@ -83,7 +83,7 @@ def merge_artifacts(
     edges_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
     edge_sources: dict[tuple[Any, ...], str] = {}
 
-    for data, src in zip(artifacts, source_paths):
+    for data, src in zip(artifacts, source_paths, strict=True):
         src_label = str(Path(src).expanduser().resolve()) if not isinstance(src, str) else src
         # Prefer resolved path strings when Path given
         if isinstance(src, Path):

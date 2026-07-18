@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 import pathspec
 from loguru import logger
@@ -22,7 +23,11 @@ from grapheinstein.core.parsers import DEFAULT_LANGUAGES, merge_code_structure
 from grapheinstein.core.parsers.docs import merge_docs_structure
 from grapheinstein.core.parsers.media_av import merge_media_av
 from grapheinstein.core.parsers.media_link import merge_media_links
-from grapheinstein.core.parsers.media_ocr import MediaExtrasError, ensure_media_deps, merge_media_ocr
+from grapheinstein.core.parsers.media_ocr import (
+    MediaExtrasError,
+    ensure_media_deps,
+    merge_media_ocr,
+)
 from grapheinstein.core.parsers.pdf import merge_pdf_structure
 from grapheinstein.core.references import add_reference_edges
 from grapheinstein.utils import DEFAULT_MAX_FILE_SIZE, resolve_project_path
@@ -147,7 +152,7 @@ class _NullProgress:
     def set_stage(self, *_args: Any, **_kwargs: Any) -> None:
         return None
 
-    def __enter__(self) -> "_NullProgress":
+    def __enter__(self) -> _NullProgress:
         return self
 
     def __exit__(self, *_exc: Any) -> None:
@@ -165,6 +170,7 @@ class _RichIndexProgress:
             TextColumn,
             TimeElapsedColumn,
         )
+
         from grapheinstein.utils import console
 
         self._progress = Progress(
@@ -179,7 +185,7 @@ class _RichIndexProgress:
         self._total = total
         self._description = description
 
-    def __enter__(self) -> "_RichIndexProgress":
+    def __enter__(self) -> _RichIndexProgress:
         self._progress.__enter__()
         self._task = self._progress.add_task(
             self._description, total=self._total, stage=self._description

@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Literal, Sequence
+from typing import Any, Literal
 
 import networkx as nx
 
 from grapheinstein.core.graph import (
-    GraphError,
     artifact_to_digraph,
     load_artifact,
     to_artifact_dict,
@@ -22,8 +22,8 @@ from grapheinstein.core.parsers.llm_ollama import (
     DEFAULT_BASE_URL,
     DEFAULT_MODEL,
     OllamaError,
-    check_ready,
     chat_text,
+    check_ready,
     embed_texts,
 )
 
@@ -128,7 +128,7 @@ def build_explanation_artifact(
     src_graph = source.get("graph") if isinstance(source.get("graph"), dict) else {}
     if isinstance(src_graph.get("project_root"), str):
         project_root = src_graph["project_root"]
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     sub.graph["project_root"] = project_root
     sub.graph["generated_at"] = now
     sub.graph["explained_concept"] = concept

@@ -3,7 +3,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from grapheinstein.cli import app, app_typer
+from grapheinstein.cli import app_typer
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "docs_pdf_project"
 runner = CliRunner()

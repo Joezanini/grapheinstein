@@ -4,9 +4,9 @@ import networkx as nx
 
 from grapheinstein.core.graph import add_node, new_inventory_graph
 from grapheinstein.core.references import (
+    add_reference_edges,
     find_referenced_targets,
     unique_basename_targets,
-    add_reference_edges,
 )
 
 

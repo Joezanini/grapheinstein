@@ -70,5 +70,5 @@ def test_to_artifact_preserves_contains_and_metadata(tmp_path: Path):
     validate_artifact(data, Path("<mem>"))
     node = next(n for n in data["nodes"] if n["id"] == "a.txt")
     assert node["metadata"]["kept"] is True
-    link = next(l for l in data["links"] if l["type"] == "contains")
+    link = next(edge for edge in data["links"] if edge["type"] == "contains")
     assert link["provenance"] == "extracted"

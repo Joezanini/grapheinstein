@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from grapheinstein.core.graph import (
     add_concept,
     add_depends_on_edge,
@@ -9,7 +11,6 @@ from grapheinstein.core.graph import (
     slugify_concept,
     to_artifact_dict,
 )
-from pathlib import Path
 
 
 def test_slugify_and_concept_id():

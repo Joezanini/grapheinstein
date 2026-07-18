@@ -1,11 +1,10 @@
 from pathlib import Path
 
-from grapheinstein.core.graph import new_inventory_graph, add_node
+from grapheinstein.core.graph import add_node, new_inventory_graph
 from grapheinstein.core.parsers.llm_enrich import (
     apply_enrichment_payload,
     evidence_grounded,
 )
-
 
 CHUNK = (
     "Auth Middleware validates JWT on each request.\n"

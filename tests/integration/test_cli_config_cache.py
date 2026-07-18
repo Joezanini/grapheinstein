@@ -4,7 +4,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from grapheinstein.cli import cli
-from grapheinstein.core.cache import CacheStore, KIND_AST, content_hash_bytes, settings_hash
+from grapheinstein.core.cache import KIND_AST, CacheStore, content_hash_bytes, settings_hash
 from grapheinstein.core.index import index_project
 
 runner = CliRunner()

@@ -3,9 +3,9 @@ from pathlib import Path
 from grapheinstein.core.graph import (
     add_code_entity,
     add_defines_edge,
+    add_node,
     code_entity_id,
     new_inventory_graph,
-    add_node,
 )
 
 

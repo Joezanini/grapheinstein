@@ -18,10 +18,11 @@ import os
 import pickle
 import sqlite3
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from loguru import logger
 
@@ -79,7 +80,7 @@ def pickle_loads(data: bytes) -> Any:
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class CacheStore:
@@ -92,7 +93,7 @@ class CacheStore:
         self._stats = CacheStats()
         self._conn: sqlite3.Connection | None = None
 
-    def __enter__(self) -> "CacheStore":
+    def __enter__(self) -> CacheStore:
         return self
 
     def __exit__(self, *_exc: Any) -> None:
@@ -237,7 +238,7 @@ class CacheStore:
 
 
 def get_or_compute(
-    store: "CacheStore | None",
+    store: CacheStore | None,
     kind: str,
     key: str,
     content_hash: str,

@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from grapheinstein.core.graph import add_node, new_inventory_graph, next_versioned_graph_path, save_graph
+from grapheinstein.core.graph import (
+    add_node,
+    new_inventory_graph,
+    next_versioned_graph_path,
+    save_graph,
+)
 
 
 def test_versioned_snapshots_do_not_overwrite(tmp_path: Path):

@@ -1,8 +1,8 @@
 from pathlib import Path
 
+from grapheinstein.core.graph import add_contains_edge, add_node, new_inventory_graph
 from grapheinstein.core.parsers.extract import extract_file
 from grapheinstein.core.parsers.resolve import merge_code_structure
-from grapheinstein.core.graph import new_inventory_graph, add_node, add_contains_edge
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "code_project"
 

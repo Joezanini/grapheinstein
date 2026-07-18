@@ -8,7 +8,7 @@ import os
 import re
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -96,7 +96,7 @@ class GraphError(Exception):
 def new_inventory_graph(project_root: Path) -> nx.DiGraph:
     graph = nx.DiGraph()
     graph.graph["project_root"] = str(project_root.resolve())
-    graph.graph["generated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    graph.graph["generated_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     add_node(graph, ".", "dir")
     return graph
 
@@ -485,7 +485,7 @@ def artifact_to_digraph(artifact: dict[str, Any]) -> nx.DiGraph:
     """Convert a validated node-link artifact dict into a NetworkX DiGraph."""
     graph = json_graph.node_link_graph(artifact, directed=True, edges="links")
     # Ensure node attrs use type/metadata shape used elsewhere
-    for node_id, attrs in graph.nodes(data=True):
+    for _node_id, attrs in graph.nodes(data=True):
         if "metadata" not in attrs or attrs["metadata"] is None:
             attrs["metadata"] = {}
         if not isinstance(attrs["metadata"], dict):

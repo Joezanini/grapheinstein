@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import networkx as nx
-
 from grapheinstein.core.graph import add_node, new_inventory_graph
 from grapheinstein.core.parsers.media_ocr import merge_media_ocr
 

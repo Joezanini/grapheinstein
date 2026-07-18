@@ -35,6 +35,7 @@ def test_v3_nodes_and_edge_provenance(tmp_path: Path):
 
 def test_reject_old_schema():
     import pytest
+
     from grapheinstein.core.graph import GraphError
 
     with pytest.raises(GraphError, match="unsupported|Re-index|pre-2.0.0|schema_version"):
@@ -43,6 +44,7 @@ def test_reject_old_schema():
 
 def test_reject_schema_v2():
     import pytest
+
     from grapheinstein.core.graph import GraphError
 
     with pytest.raises(GraphError, match="unsupported|Re-index|schema_version"):

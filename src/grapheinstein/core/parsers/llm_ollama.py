@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -228,7 +229,7 @@ def embed_texts(
     model: str,
     base_url: str = DEFAULT_BASE_URL,
     timeout: float = 120.0,
-    cache: "CacheStore | None" = None,
+    cache: CacheStore | None = None,
 ) -> list[list[float]]:
     """
     Embed texts via Ollama POST /api/embeddings (one request per text).

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from difflib import SequenceMatcher
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Any, Callable, Literal, Sequence
+from typing import Any, Literal
 
 from grapheinstein.core.explain import undirected_neighborhood
 from grapheinstein.core.graph import (
@@ -28,8 +29,8 @@ from grapheinstein.core.parsers.llm_ollama import (
     DEFAULT_BASE_URL,
     DEFAULT_MODEL,
     OllamaError,
-    check_ready,
     chat_text,
+    check_ready,
     embed_texts,
 )
 
@@ -238,7 +239,7 @@ def select_chunk_hits(
                     f"embed_fn returned {len(vectors)} vectors for {len(texts)} texts"
                 )
             q_vec = vectors[0]
-            for vec, (_, cand) in zip(vectors[1:], pool):
+            for vec, (_, cand) in zip(vectors[1:], pool, strict=True):
                 embedding_by_id[cand.node_id] = cosine_similarity(q_vec, vec)
         except Exception as exc:  # noqa: BLE001
             embed_note = f"Vector matching skipped: {exc}"
@@ -290,7 +291,7 @@ def build_supporting_subgraph(
     src_graph = source.get("graph") if isinstance(source.get("graph"), dict) else {}
     if isinstance(src_graph.get("project_root"), str):
         project_root = src_graph["project_root"]
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     sub.graph["project_root"] = project_root
     sub.graph["generated_at"] = now
     sub.graph["query_question"] = question

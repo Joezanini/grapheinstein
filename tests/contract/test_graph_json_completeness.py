@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from grapheinstein.core.graph import load_artifact, new_inventory_graph, add_node, save_graph
+from grapheinstein.core.graph import add_node, load_artifact, new_inventory_graph, save_graph
 
 
 def test_contract_completeness_after_save(tmp_path: Path):

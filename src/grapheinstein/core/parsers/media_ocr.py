@@ -46,8 +46,8 @@ def ensure_media_deps() -> None:
 
 
 def default_ocr_extract(path: Path) -> str:
-    from PIL import Image
     import pytesseract
+    from PIL import Image
 
     with Image.open(path) as img:
         text = pytesseract.image_to_string(img)

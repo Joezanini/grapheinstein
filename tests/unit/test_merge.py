@@ -1,10 +1,10 @@
 import json
 from pathlib import Path
 
-from grapheinstein.core.graph import load_artifact
-from grapheinstein.core.merge import MergeConflictError, merge_artifacts, merge_paths
 import pytest
 
+from grapheinstein.core.graph import load_artifact
+from grapheinstein.core.merge import MergeConflictError, merge_artifacts, merge_paths
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "merge_graphs"
 

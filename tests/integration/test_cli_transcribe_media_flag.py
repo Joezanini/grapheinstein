@@ -34,7 +34,7 @@ def test_flag_off_no_media(tmp_path: Path):
     data = json.loads(out.read_text())
     assert data["graph"]["transcribe_media"] is False
     assert not any(n["type"] in {"media_text", "transcript_chunk"} for n in data["nodes"])
-    assert not any(l["type"] == "related_to" for l in data["links"])
+    assert not any(link["type"] == "related_to" for link in data["links"])
 
 
 def test_flag_on_with_stubs(tmp_path: Path):

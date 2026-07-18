@@ -6,7 +6,11 @@ from grapheinstein.core.graph import (
     add_node,
     new_inventory_graph,
 )
-from grapheinstein.core.parsers.media_link import link_by_content, link_by_filename, merge_media_links
+from grapheinstein.core.parsers.media_link import (
+    link_by_content,
+    link_by_filename,
+    merge_media_links,
+)
 
 
 def test_filename_unique_stem(tmp_path: Path):

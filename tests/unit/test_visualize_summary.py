@@ -3,7 +3,6 @@ from pathlib import Path
 from grapheinstein.core.graph import stats_from_artifact
 from grapheinstein.core.visualize import artifact_to_dot
 
-
 SAMPLE = {
     "schema_version": "6.0.0",
     "directed": True,

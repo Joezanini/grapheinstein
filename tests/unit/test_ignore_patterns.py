@@ -2,7 +2,6 @@ from pathlib import Path
 
 from grapheinstein.core.index import build_inventory_graph, discover_paths
 
-
 FIX = Path(__file__).resolve().parents[1] / "fixtures" / "config_cache"
 
 

@@ -5,9 +5,9 @@ import pytest
 
 from grapheinstein.core.graph import artifact_to_digraph, load_artifact
 from grapheinstein.core.path import (
+    PATH_ANSWER_KIND,
     EndpointUnresolvedError,
     NoPathError,
-    PATH_ANSWER_KIND,
     PathTooLongError,
     find_path,
     find_weighted_path,

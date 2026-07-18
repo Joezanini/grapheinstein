@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Literal, Sequence
+from typing import Any, Literal
 
 import networkx as nx
 
@@ -17,8 +18,8 @@ from grapheinstein.core.match import MatchCandidate, score_nodes, select_matches
 from grapheinstein.core.parsers.llm_ollama import (
     DEFAULT_BASE_URL,
     DEFAULT_MODEL,
-    check_ready,
     chat_text,
+    check_ready,
     embed_texts,
 )
 
@@ -330,7 +331,7 @@ def build_path_answer(
     explanation_mode: ExplanationMode = "deterministic",
     generated_at: str | None = None,
 ) -> PathAnswer:
-    ts = generated_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ts = generated_at or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     node_tuple = tuple(nodes)
     step_tuple = tuple(steps)
     return PathAnswer(

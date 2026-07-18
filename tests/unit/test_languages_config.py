@@ -1,10 +1,11 @@
+import pytest
+
 from grapheinstein.core.parsers.registry import (
     CANONICAL_LANGUAGES,
     LanguageError,
     parse_languages_csv,
     validate_languages,
 )
-import pytest
 
 
 def test_validate_languages_ok():

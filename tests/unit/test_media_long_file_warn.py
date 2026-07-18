@@ -4,7 +4,7 @@ from loguru import logger
 
 from grapheinstein.core.graph import add_node, new_inventory_graph
 from grapheinstein.core.parsers.media_av import Segment, TranscriptionResult, merge_media_av
-from grapheinstein.core.parsers.media_ocr import LONG_FILE_BYTES, merge_media_ocr
+from grapheinstein.core.parsers.media_ocr import merge_media_ocr
 
 
 def test_long_file_size_warn_ocr(tmp_path: Path, caplog):
