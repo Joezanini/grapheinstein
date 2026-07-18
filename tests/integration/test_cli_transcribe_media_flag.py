@@ -70,7 +70,7 @@ def test_cli_index_with_transcribe_media_flag(tmp_path: Path, monkeypatch):
             skip_media_deps_check=True,
         )
 
-    monkeypatch.setattr("grapheinstein.cli.index_project", fake_index)
+    monkeypatch.setattr("grapheinstein.api.index_project", fake_index)
     result = runner.invoke(
         app_typer,
         ["index", str(FIXTURE), "--transcribe-media", "-o", str(out)],

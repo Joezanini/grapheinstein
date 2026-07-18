@@ -21,3 +21,6 @@ graph.json
 # Optional media model / OCR caches
 .cache/
 *.pt
+
+# Grapheinstein local cache / project-local config artifacts
+.grapheinstein/

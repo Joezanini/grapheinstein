@@ -83,6 +83,10 @@ class GraphStats:
     project_root: str | None
     graph_path: str
     parse_skips: int = 0
+    cache_hits: int = 0
+    cache_misses: int = 0
+    cache_corrupt_recovered: int = 0
+    skipped_oversize: int = 0
 
 
 class GraphError(Exception):
@@ -556,6 +560,20 @@ def to_artifact_dict(graph: nx.DiGraph) -> dict[str, Any]:
         graph_meta["explain_match_scores"] = {
             str(k): float(v) for k, v in graph.graph["explain_match_scores"].items()
         }
+    if graph.graph.get("query_question"):
+        graph_meta["query_question"] = str(graph.graph["query_question"])
+    if graph.graph.get("query_hit_ids") is not None:
+        graph_meta["query_hit_ids"] = list(graph.graph["query_hit_ids"])
+    if "query_k" in graph.graph:
+        graph_meta["query_k"] = int(graph.graph["query_k"])
+    if "query_hops" in graph.graph:
+        graph_meta["query_hops"] = int(graph.graph["query_hops"])
+    if "query_truncated" in graph.graph:
+        graph_meta["query_truncated"] = bool(graph.graph["query_truncated"])
+    if isinstance(graph.graph.get("query_hit_scores"), dict):
+        graph_meta["query_hit_scores"] = {
+            str(k): float(v) for k, v in graph.graph["query_hit_scores"].items()
+        }
     data["graph"] = graph_meta
     return data
 
@@ -929,6 +947,10 @@ def stats_from_artifact(
     graph_path: Path,
     *,
     parse_skips: int = 0,
+    cache_hits: int = 0,
+    cache_misses: int = 0,
+    cache_corrupt_recovered: int = 0,
+    skipped_oversize: int = 0,
 ) -> GraphStats:
     nodes = data.get("nodes") or []
     links = data.get("links") or []
@@ -979,4 +1001,8 @@ def stats_from_artifact(
         project_root=project_root,
         graph_path=str(graph_path.resolve()),
         parse_skips=parse_skips,
+        cache_hits=cache_hits,
+        cache_misses=cache_misses,
+        cache_corrupt_recovered=cache_corrupt_recovered,
+        skipped_oversize=skipped_oversize,
     )

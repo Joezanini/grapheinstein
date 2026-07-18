@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import networkx as nx
 from loguru import logger
 
+from grapheinstein.core.cache import KIND_AST, content_hash_bytes, pickle_dumps, pickle_loads, settings_hash
 from grapheinstein.core.graph import (
     add_calls_edge,
     add_code_entity,
@@ -15,6 +17,11 @@ from grapheinstein.core.graph import (
 )
 from grapheinstein.core.parsers.extract import CallFact, CodeEntity, ExtractResult, ImportFact, extract_file
 from grapheinstein.core.parsers.registry import language_for_path
+
+if TYPE_CHECKING:
+    from grapheinstein.core.cache import CacheStore
+
+_AST_PARSER_VERSION = "tree-sitter-v1"
 
 
 def _module_to_candidates(module: str, source_file: str, language: str) -> list[str]:
@@ -197,10 +204,45 @@ def apply_edges(
         add_calls_edge(graph, source, callee)
 
 
+def _extract_file_cached(
+    path: Path,
+    lang: str,
+    *,
+    file_id: str,
+    cache: "CacheStore | None",
+) -> ExtractResult:
+    if cache is None:
+        return extract_file(path, lang, file_id=file_id)
+
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return extract_file(path, lang, file_id=file_id)
+
+    content_hash = content_hash_bytes(raw)
+    settings = settings_hash(
+        {"kind": KIND_AST, "language": lang, "parser": _AST_PARSER_VERSION}
+    )
+    cached = cache.get(KIND_AST, file_id, content_hash, settings)
+    if cached is not None:
+        try:
+            return pickle_loads(cached)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("AST cache payload for {} failed to load: {}", file_id, exc)
+
+    result = extract_file(path, lang, file_id=file_id)
+    try:
+        cache.put(KIND_AST, file_id, content_hash, settings, pickle_dumps(result))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("AST cache write failed for {}: {}", file_id, exc)
+    return result
+
+
 def merge_code_structure(
     graph: nx.DiGraph,
     project_root: Path,
     enabled_languages: list[str],
+    cache: "CacheStore | None" = None,
 ) -> int:
     """
     Walk file nodes, extract structure for enabled languages, merge into graph.
@@ -210,7 +252,9 @@ def merge_code_structure(
     file_nodes = [
         nid
         for nid, attrs in graph.nodes(data=True)
-        if attrs.get("type") == "file" and not (attrs.get("metadata") or {}).get("symlink")
+        if attrs.get("type") == "file"
+        and not (attrs.get("metadata") or {}).get("symlink")
+        and not (attrs.get("metadata") or {}).get("skipped")
     ]
 
     pending: list[tuple[str, str, ExtractResult, dict[str, str]]] = []
@@ -220,7 +264,7 @@ def merge_code_structure(
             continue
         path = project_root / file_id
         try:
-            result = extract_file(path, lang, file_id=file_id)
+            result = _extract_file_cached(path, lang, file_id=file_id, cache=cache)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Structure extract failed for {}: {}", file_id, exc)
             skips += 1

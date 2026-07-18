@@ -1,0 +1,105 @@
+{
+  "schema_version": "6.0.0",
+  "directed": true,
+  "multigraph": false,
+  "graph": {
+    "project_root": "/projects/query-auth-chunks",
+    "generated_at": "2026-07-17T00:00:00Z"
+  },
+  "nodes": [
+    {
+      "id": ".",
+      "type": "dir",
+      "metadata": {}
+    },
+    {
+      "id": "docs/auth.md",
+      "type": "file",
+      "metadata": {}
+    },
+    {
+      "id": "auth.py",
+      "type": "file",
+      "metadata": {}
+    },
+    {
+      "id": "docs/auth.md::media_text::0",
+      "type": "media_text",
+      "metadata": {
+        "file": "docs/auth.md",
+        "text": "Authentication verifies user identity with tokens before allowing access to protected routes.",
+        "source": "ocr",
+        "ordinal": 0
+      }
+    },
+    {
+      "id": "auth.py::check_auth",
+      "type": "function",
+      "metadata": {
+        "name": "check_auth",
+        "language": "python",
+        "file": "auth.py",
+        "start_line": 10
+      }
+    },
+    {
+      "id": "concept::authentication",
+      "type": "concept",
+      "metadata": {
+        "name": "Authentication",
+        "kind": "domain_term"
+      }
+    },
+    {
+      "id": "unrelated.py",
+      "type": "file",
+      "metadata": {}
+    }
+  ],
+  "links": [
+    {
+      "source": ".",
+      "target": "docs/auth.md",
+      "type": "contains",
+      "provenance": "extracted"
+    },
+    {
+      "source": ".",
+      "target": "auth.py",
+      "type": "contains",
+      "provenance": "extracted"
+    },
+    {
+      "source": ".",
+      "target": "unrelated.py",
+      "type": "contains",
+      "provenance": "extracted"
+    },
+    {
+      "source": "docs/auth.md::media_text::0",
+      "target": "docs/auth.md",
+      "type": "section_of",
+      "provenance": "extracted"
+    },
+    {
+      "source": "docs/auth.md::media_text::0",
+      "target": "auth.py::check_auth",
+      "type": "related_to",
+      "provenance": "inferred"
+    },
+    {
+      "source": "concept::authentication",
+      "target": "auth.py::check_auth",
+      "type": "mentions",
+      "provenance": "inferred",
+      "confidence": 0.9,
+      "evidence": "auth"
+    },
+    {
+      "source": "auth.py",
+      "target": "auth.py::check_auth",
+      "type": "defines",
+      "provenance": "extracted"
+    }
+  ]
+}

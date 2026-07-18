@@ -293,6 +293,8 @@ def _eligible_file_ids(graph, project_root: Path) -> list[str]:
         meta = attrs.get("metadata") or {}
         if meta.get("symlink"):
             continue
+        if meta.get("skipped"):
+            continue
         path = project_root / nid
         if path.suffix.lower() not in text_ext and path.suffix.lower() not in {".pdf"}:
             # still allow files without extension that look like source? skip unknown

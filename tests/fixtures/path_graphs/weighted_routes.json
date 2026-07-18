@@ -1,0 +1,101 @@
+{
+  "schema_version": "6.0.0",
+  "directed": true,
+  "multigraph": false,
+  "graph": {
+    "project_root": "/projects/path-weighted",
+    "generated_at": "2026-07-17T00:00:00Z"
+  },
+  "nodes": [
+    {
+      "id": ".",
+      "type": "dir",
+      "metadata": {}
+    },
+    {
+      "id": "routes.py",
+      "type": "file",
+      "metadata": {}
+    },
+    {
+      "id": "concept::start-a",
+      "type": "concept",
+      "metadata": {
+        "name": "A",
+        "kind": "domain_term"
+      }
+    },
+    {
+      "id": "concept::end-b",
+      "type": "concept",
+      "metadata": {
+        "name": "B",
+        "kind": "domain_term"
+      }
+    },
+    {
+      "id": "func:preferred-mid",
+      "type": "function",
+      "metadata": {
+        "name": "preferred_mid",
+        "language": "python",
+        "file": "routes.py",
+        "start_line": 10
+      }
+    },
+    {
+      "id": "func:noise",
+      "type": "function",
+      "metadata": {
+        "name": "noise",
+        "language": "python",
+        "file": "routes.py",
+        "start_line": 20
+      }
+    }
+  ],
+  "links": [
+    {
+      "source": ".",
+      "target": "routes.py",
+      "type": "contains",
+      "provenance": "extracted"
+    },
+    {
+      "source": "routes.py",
+      "target": "func:preferred-mid",
+      "type": "defines",
+      "provenance": "extracted"
+    },
+    {
+      "source": "routes.py",
+      "target": "func:noise",
+      "type": "defines",
+      "provenance": "extracted"
+    },
+    {
+      "source": "concept::start-a",
+      "target": "concept::end-b",
+      "type": "related_to",
+      "provenance": "inferred",
+      "confidence": 0.15,
+      "evidence": "weak shortcut"
+    },
+    {
+      "source": "concept::start-a",
+      "target": "func:preferred-mid",
+      "type": "mentions",
+      "provenance": "extracted",
+      "confidence": 0.95,
+      "evidence": "preferred route hop 1"
+    },
+    {
+      "source": "func:preferred-mid",
+      "target": "concept::end-b",
+      "type": "calls",
+      "provenance": "extracted",
+      "confidence": 0.9,
+      "evidence": "preferred route hop 2"
+    }
+  ]
+}

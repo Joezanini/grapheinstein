@@ -1,0 +1,77 @@
+{
+  "schema_version": "6.0.0",
+  "directed": true,
+  "multigraph": false,
+  "graph": {
+    "project_root": "/projects/path-simple",
+    "generated_at": "2026-07-17T00:00:00Z"
+  },
+  "nodes": [
+    {
+      "id": ".",
+      "type": "dir",
+      "metadata": {}
+    },
+    {
+      "id": "chain.py",
+      "type": "file",
+      "metadata": {}
+    },
+    {
+      "id": "concept::start-concept",
+      "type": "concept",
+      "metadata": {
+        "name": "start-concept",
+        "kind": "domain_term"
+      }
+    },
+    {
+      "id": "chain.py::mid_fn",
+      "type": "function",
+      "metadata": {
+        "name": "mid_fn",
+        "language": "python",
+        "file": "chain.py",
+        "start_line": 1
+      }
+    },
+    {
+      "id": "concept::end-concept",
+      "type": "concept",
+      "metadata": {
+        "name": "end-concept",
+        "kind": "domain_term"
+      }
+    }
+  ],
+  "links": [
+    {
+      "source": ".",
+      "target": "chain.py",
+      "type": "contains",
+      "provenance": "extracted"
+    },
+    {
+      "source": "chain.py",
+      "target": "chain.py::mid_fn",
+      "type": "defines",
+      "provenance": "extracted"
+    },
+    {
+      "source": "concept::start-concept",
+      "target": "chain.py",
+      "type": "mentions",
+      "provenance": "extracted",
+      "confidence": 0.9,
+      "evidence": "fixture"
+    },
+    {
+      "source": "chain.py::mid_fn",
+      "target": "concept::end-concept",
+      "type": "mentions",
+      "provenance": "extracted",
+      "confidence": 0.85,
+      "evidence": "fixture"
+    }
+  ]
+}

@@ -9,27 +9,67 @@ from typing import List, Optional
 import typer
 from rich.table import Table
 
+from grapheinstein.api import index as api_index
+from grapheinstein.api import query as api_query
 from grapheinstein.core.explain import ExplainError, NoMatchError, explain_concept
 from grapheinstein.core.graph import GraphError, load_artifact, stats_from_artifact
-from grapheinstein.core.index import MediaExtrasError, index_project
+from grapheinstein.core.index import MediaExtrasError
 from grapheinstein.core.merge import MergeConflictError, merge_paths
-from grapheinstein.core.parsers import LanguageError, parse_languages_csv
+from grapheinstein.core.path import (
+    EndpointUnresolvedError,
+    NoPathError,
+    PathError,
+    PathTooLongError,
+    find_path,
+    path_answer_to_dict,
+)
+from grapheinstein.core.query import (
+    EmptyCorpusError,
+    NoEvidenceError,
+    QueryError,
+)
 from grapheinstein.core.visualize import load_graph_for_visualize, print_summary, write_dot
+from grapheinstein.core.cache import CacheStore
 from grapheinstein.utils import (
     ConfigError,
+    USER_CONFIG_PATH,
     console,
     load_config,
     setup_logging,
+    write_config_template,
 )
 
 cli = typer.Typer(
     name="grapheinstein",
-    help="Local-first project knowledge graph CLI",
+    help=(
+        "Local-first project knowledge graph CLI. "
+        "Index projects into portable graph.json, then explain/path/query locally."
+    ),
+    epilog=(
+        "Examples:\n"
+        "  grapheinstein init\n"
+        "  grapheinstein init --output ./gs.yaml\n"
+        "  grapheinstein index . --config ~/.grapheinstein/config.yaml\n"
+        "  grapheinstein query \"How does auth work?\" -i graph.json -o sub.json --no-answer\n"
+        "  grapheinstein serve --port 8000"
+    ),
     no_args_is_help=True,
     add_completion=False,
 )
 
-_KNOWN_COMMANDS = frozenset({"index", "status", "visualize", "merge", "explain"})
+_KNOWN_COMMANDS = frozenset(
+    {
+        "init",
+        "index",
+        "status",
+        "visualize",
+        "merge",
+        "explain",
+        "path",
+        "query",
+        "serve",
+    }
+)
 _OPTS_WITH_VALUE = frozenset(
     {
         "--output",
@@ -40,10 +80,15 @@ _OPTS_WITH_VALUE = frozenset(
         "--dot",
         "--languages",
         "--llm-model",
+        "--embedding-model",
         "--llm-base-url",
         "--hops",
         "--top-n",
         "--match-threshold",
+        "--max-hops",
+        "--k",
+        "--max-file-size",
+        "--cache-dir",
     }
 )
 
@@ -104,6 +149,13 @@ def _print_index_summary(stats, output_path: Path) -> None:
     table.add_row("Depends-on edges", str(stats.depends_on_count))
     if stats.parse_skips:
         table.add_row("Parse skips", str(stats.parse_skips))
+    if getattr(stats, "skipped_oversize", 0):
+        table.add_row("Skipped oversize", str(stats.skipped_oversize))
+    if getattr(stats, "cache_hits", 0) or getattr(stats, "cache_misses", 0):
+        table.add_row("Cache hits", str(stats.cache_hits))
+        table.add_row("Cache misses", str(stats.cache_misses))
+    if getattr(stats, "cache_corrupt_recovered", 0):
+        table.add_row("Cache recovered", str(stats.cache_corrupt_recovered))
     table.add_row("Output", str(output_path))
     console.print(table)
 
@@ -120,47 +172,29 @@ def _run_index(
     enrich_llm: bool,
     llm_model: Optional[str],
     llm_base_url: Optional[str],
+    embedding_model: Optional[str],
     compress: bool,
     versioned: bool,
 ) -> None:
-    languages_override = None
-    if languages is not None:
-        try:
-            languages_override = parse_languages_csv(languages)
-        except LanguageError as exc:
-            _fail(str(exc), 1)
-
     try:
-        cfg = load_config(
-            config_path=config,
-            output_override=output,
-            languages_override=languages_override,
-            llm_model_override=llm_model,
-            llm_base_url_override=llm_base_url,
-            compress_override=True if compress else None,
-            versioned_override=True if versioned else None,
-        )
-    except ConfigError as exc:
-        _fail(str(exc), 1)
-
-    setup_logging(cfg.log_level)
-    output_path = Path(cfg.output)
-
-    try:
-        written, stats = index_project(
+        result = api_index(
             project_path,
-            output_path,
-            languages=list(cfg.languages),
+            output=output,
+            config=config,
+            languages=languages,
             include_docs=include_docs,
             include_pdfs=include_pdfs,
             transcribe_media=transcribe_media,
             enrich_llm=enrich_llm,
-            llm_model=cfg.llm_model,
-            llm_base_url=cfg.llm_base_url,
-            llm_confidence_threshold=cfg.llm_confidence_threshold,
-            compress=cfg.compress,
-            versioned=cfg.versioned,
+            llm_model=llm_model,
+            llm_base_url=llm_base_url,
+            embedding_model=embedding_model,
+            compress=compress,
+            versioned=versioned,
+            show_progress=sys.stderr.isatty(),
         )
+    except ConfigError as exc:
+        _fail(str(exc), 1)
     except MediaExtrasError as exc:
         _fail(str(exc), 1)
     except GraphError as exc:
@@ -174,17 +208,61 @@ def _run_index(
     except Exception as exc:  # noqa: BLE001
         _fail(f"Indexing failed: {exc}", 1)
 
-    _print_index_summary(stats, written)
+    _print_index_summary(result.stats, result.output_path)
 
 
-@cli.command("index")
-def index_cmd(
-    project_path: Path = typer.Argument(..., help="Project folder to index"),
+@cli.command("init")
+def init_cmd(
     output: Optional[Path] = typer.Option(
         None,
         "--output",
         "-o",
-        help="Path for graph.json artifact",
+        help="Destination config path (default: ~/.grapheinstein/config.yaml)",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Overwrite an existing config file without prompting",
+    ),
+) -> None:
+    """Create a commented starter config.yaml with documented defaults."""
+    destination = (output if output is not None else USER_CONFIG_PATH).expanduser()
+    if destination.exists() and not force:
+        if sys.stdin.isatty() and sys.stderr.isatty():
+            if not typer.confirm(
+                f"Config already exists at {destination}. Overwrite?",
+                default=False,
+            ):
+                _fail(
+                    f"Config file already exists at {destination}; "
+                    "re-run with --force to overwrite",
+                    1,
+                )
+        else:
+            _fail(
+                f"Config file already exists at {destination}; "
+                "use --force to overwrite (non-interactive)",
+                1,
+            )
+    try:
+        # Overwrite policy already enforced above; force write of the template.
+        written = write_config_template(destination, force=True)
+    except ConfigError as exc:
+        _fail(str(exc), 1)
+    console.print(f"Wrote config template to {written.resolve()}")
+
+
+@cli.command("index")
+def index_cmd(
+    project_path: Path = typer.Argument(
+        ...,
+        help="Project folder to index (respects .gitignore and config ignored_patterns)",
+    ),
+    output: Optional[Path] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Path for graph.json artifact (default: graph.json or config)",
     ),
     languages: Optional[str] = typer.Option(
         None,
@@ -214,7 +292,12 @@ def index_cmd(
     llm_model: Optional[str] = typer.Option(
         None,
         "--llm-model",
-        help="Ollama model tag (default: qwen3.5-2b-mlx:fp16-8gbGPU or config)",
+        help="Ollama model tag for LLM enrichment (default from config)",
+    ),
+    embedding_model: Optional[str] = typer.Option(
+        None,
+        "--embedding-model",
+        help="Ollama model tag for embeddings (default from config or llm_model)",
     ),
     llm_base_url: Optional[str] = typer.Option(
         None,
@@ -249,6 +332,7 @@ def index_cmd(
         enrich_llm=enrich_llm,
         llm_model=llm_model,
         llm_base_url=llm_base_url,
+        embedding_model=embedding_model,
         compress=compress,
         versioned=versioned,
     )
@@ -409,7 +493,12 @@ def explain_cmd(
     llm_model: Optional[str] = typer.Option(
         None,
         "--llm-model",
-        help="Local Ollama model for summary (and embeddings when used)",
+        help="Local Ollama model for summary text (default from config)",
+    ),
+    embedding_model: Optional[str] = typer.Option(
+        None,
+        "--embedding-model",
+        help="Local Ollama model for embeddings (default from config or llm_model)",
     ),
     llm_base_url: Optional[str] = typer.Option(
         None,
@@ -433,6 +522,7 @@ def explain_cmd(
             config_path=config,
             llm_model_override=llm_model,
             llm_base_url_override=llm_base_url,
+            embedding_model_override=embedding_model,
             explain_hops_override=hops,
             explain_top_n_override=top_n,
             explain_match_threshold_override=match_threshold,
@@ -454,6 +544,8 @@ def explain_cmd(
             want_summary=not no_summary,
             llm_model=cfg.llm_model,
             llm_base_url=cfg.llm_base_url,
+            embedding_model=cfg.embedding_model,
+            cache=CacheStore(cfg.cache_dir),
         )
     except NoMatchError as exc:
         _fail(str(exc), 1)
@@ -489,6 +581,296 @@ def explain_cmd(
         console.print(result.summary_text)
     elif result.summary_detail:
         console.print(f"[yellow]{result.summary_detail}[/yellow]")
+
+
+@cli.command("path")
+def path_cmd(
+    start: str = typer.Argument(..., help="Start concept phrase"),
+    end: str = typer.Argument(..., help="End concept phrase"),
+    input_path: Path = typer.Option(
+        ...,
+        "--input",
+        "-i",
+        help="Path to existing graph.json artifact",
+    ),
+    output_path: Optional[Path] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Optional path to write path-answer JSON (same document as stdout)",
+    ),
+    match_threshold: Optional[float] = typer.Option(
+        None,
+        "--match-threshold",
+        help="Minimum match score in [0.0, 1.0] per endpoint",
+    ),
+    max_hops: Optional[int] = typer.Option(
+        None,
+        "--max-hops",
+        help="Maximum accepted path edge count",
+    ),
+    llm_model: Optional[str] = typer.Option(
+        None,
+        "--llm-model",
+        help="Local Ollama model for explanation polish (default from config)",
+    ),
+    embedding_model: Optional[str] = typer.Option(
+        None,
+        "--embedding-model",
+        help="Local Ollama model for embeddings (default from config or llm_model)",
+    ),
+    llm_base_url: Optional[str] = typer.Option(
+        None,
+        "--llm-base-url",
+        help="Local Ollama base URL",
+    ),
+    no_llm_explain: bool = typer.Option(
+        False,
+        "--no-llm-explain",
+        help="Skip LLM polish; keep deterministic explanation",
+    ),
+    config: Optional[Path] = typer.Option(
+        None,
+        "--config",
+        help="YAML config file (overrides ~/.grapheinstein/config.yaml)",
+    ),
+) -> None:
+    """Find a preferred weighted path between two concepts and print a path answer."""
+    import json
+
+    try:
+        cfg = load_config(
+            config_path=config,
+            llm_model_override=llm_model,
+            llm_base_url_override=llm_base_url,
+            embedding_model_override=embedding_model,
+            path_match_threshold_override=match_threshold,
+            path_max_hops_override=max_hops,
+        )
+    except ConfigError as exc:
+        _fail(str(exc), 1)
+
+    setup_logging(cfg.log_level)
+
+    try:
+        result = find_path(
+            start,
+            end,
+            input_path,
+            output_path=output_path,
+            match_threshold=cfg.path_match_threshold,
+            max_hops=cfg.path_max_hops,
+            confidence_default=cfg.path_confidence_default,
+            confidence_floor=cfg.path_confidence_floor,
+            inferred_factor=cfg.path_provenance_inferred_factor,
+            want_llm_explain=not no_llm_explain,
+            llm_model=cfg.llm_model,
+            llm_base_url=cfg.llm_base_url,
+            embedding_model=cfg.embedding_model,
+            cache=CacheStore(cfg.cache_dir),
+        )
+    except EndpointUnresolvedError as exc:
+        _fail(str(exc), 1)
+    except (NoPathError, PathTooLongError, PathError) as exc:
+        _fail(str(exc), 1)
+    except FileNotFoundError as exc:
+        _fail(str(exc), 1)
+    except GraphError as exc:
+        _fail(str(exc), 1)
+    except OSError as exc:
+        _fail(str(exc), 1)
+
+    payload = path_answer_to_dict(result.answer)
+    typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+
+    table = Table(title="Path complete", show_header=True, header_style="bold")
+    table.add_column("Metric")
+    table.add_column("Value")
+    table.add_row("Start", f"{result.answer.start.node_id} ({result.answer.start.score:.2f})")
+    table.add_row("End", f"{result.answer.end.node_id} ({result.answer.end.score:.2f})")
+    table.add_row("Hops", str(result.answer.hop_count))
+    table.add_row("Total cost", f"{result.answer.total_cost:.3f}")
+    if result.output_path is not None:
+        table.add_row("Output", str(result.output_path))
+    table.add_row("Explanation", result.explanation_status)
+    console.print(table)
+
+    if result.embed_note:
+        console.print(f"[yellow]{result.embed_note}[/yellow]")
+    if result.explanation_detail and result.explanation_status != "ok":
+        console.print(f"[yellow]{result.explanation_detail}[/yellow]")
+    console.print("\n[bold]Explanation[/bold]")
+    console.print(result.answer.explanation)
+
+
+@cli.command("query")
+def query_cmd(
+    question: str = typer.Argument(..., help="Plain-language question to answer"),
+    input_path: Path = typer.Option(
+        ...,
+        "--input",
+        "-i",
+        help="Path to existing graph.json artifact",
+    ),
+    output_path: Path = typer.Option(
+        ...,
+        "--output",
+        "-o",
+        help="Destination path for supporting subgraph",
+    ),
+    k: Optional[int] = typer.Option(
+        None,
+        "--k",
+        help="Maximum primary retrieval hits (1-200)",
+    ),
+    hops: Optional[int] = typer.Option(
+        None,
+        "--hops",
+        help="Undirected expansion radius (1 or 2)",
+    ),
+    match_threshold: Optional[float] = typer.Option(
+        None,
+        "--match-threshold",
+        help="Minimum hit score in [0.0, 1.0]",
+    ),
+    llm_model: Optional[str] = typer.Option(
+        None,
+        "--llm-model",
+        help="Local Ollama model for answer text (default from config)",
+    ),
+    embedding_model: Optional[str] = typer.Option(
+        None,
+        "--embedding-model",
+        help="Local Ollama model for embeddings (default from config or llm_model)",
+    ),
+    llm_base_url: Optional[str] = typer.Option(
+        None,
+        "--llm-base-url",
+        help="Local Ollama base URL",
+    ),
+    no_answer: bool = typer.Option(
+        False,
+        "--no-answer",
+        help="Skip local LLM answer; still write subgraph and visualization summary",
+    ),
+    config: Optional[Path] = typer.Option(
+        None,
+        "--config",
+        help="YAML config file (overrides ~/.grapheinstein/config.yaml)",
+    ),
+) -> None:
+    """Answer a plain-language question with hybrid retrieval and a cited subgraph."""
+    import json
+
+    try:
+        envelope = api_query(
+            question,
+            input=input_path,
+            output=output_path,
+            config=config,
+            k=k,
+            hops=hops,
+            match_threshold=match_threshold,
+            no_answer=no_answer,
+            llm_model=llm_model,
+            llm_base_url=llm_base_url,
+            embedding_model=embedding_model,
+        )
+    except ConfigError as exc:
+        _fail(str(exc), 1)
+    except (NoEvidenceError, EmptyCorpusError) as exc:
+        _fail(str(exc), 1)
+    except QueryError as exc:
+        _fail(str(exc), 1)
+    except FileNotFoundError as exc:
+        _fail(str(exc), 1)
+    except GraphError as exc:
+        _fail(str(exc), 1)
+    except OSError as exc:
+        _fail(str(exc), 1)
+
+    typer.echo(json.dumps(envelope, indent=2, ensure_ascii=False))
+
+    hit_ids = list(envelope.get("hit_ids") or [])
+    answer = envelope.get("answer") or {}
+    viz = envelope.get("visualization") or {}
+    table = Table(title="Query complete", show_header=True, header_style="bold")
+    table.add_column("Metric")
+    table.add_column("Value")
+    table.add_row("Question", str(envelope.get("question") or question))
+    table.add_row(
+        "Hits",
+        ", ".join(hit_ids[:5]) + ("…" if len(hit_ids) > 5 else ""),
+    )
+    table.add_row("k", str(envelope.get("k")))
+    table.add_row("Hops", str(envelope.get("hops")))
+    table.add_row("Truncated", "yes" if envelope.get("truncated") else "no")
+    table.add_row("Output", str(envelope.get("output") or output_path))
+    table.add_row("Answer", str(answer.get("status") or ""))
+    console.print(table)
+
+    console.print("\n[bold]Visualization summary[/bold]")
+    types = viz.get("node_type_counts") or {}
+    type_s = ", ".join(f"{t}={n}" for t, n in list(types.items())[:8])
+    sample = ", ".join(viz.get("sample_hit_ids") or []) or "(none)"
+    console.print(
+        f"Supporting subgraph: {viz.get('node_count', 0)} nodes, "
+        f"{viz.get('edge_count', 0)} edges\n"
+        f"Node types: {type_s or '(none)'}\n"
+        f"Primary hits (sample): {sample}\n"
+        f"Truncated: {'yes' if viz.get('truncated') else 'no'}\n"
+        f"Output: {viz.get('output_path') or envelope.get('output')}"
+    )
+
+    if envelope.get("embed_note"):
+        console.print(f"[yellow]{envelope['embed_note']}[/yellow]")
+    if envelope.get("truncated"):
+        console.print(
+            "[yellow]Neighborhood truncated to query_node_cap; "
+            "graph.query_truncated=true[/yellow]"
+        )
+    if answer.get("status") == "ok" and answer.get("text"):
+        console.print("\n[bold]Answer[/bold]")
+        console.print(answer["text"])
+    elif answer.get("detail"):
+        console.print(f"[yellow]{answer['detail']}[/yellow]")
+
+
+@cli.command("serve")
+def serve_cmd(
+    port: int = typer.Option(
+        8000,
+        "--port",
+        help="TCP port to listen on (default: 8000)",
+    ),
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help=(
+            "Bind address (default: 127.0.0.1 loopback only). "
+            "Binding beyond loopback exposes the API on the network without auth — "
+            "use only on trusted networks."
+        ),
+    ),
+) -> None:
+    """Start optional local HTTP API (POST /index, POST /query). See docs/agent-integration.md."""
+    from grapheinstein.serve import ServeExtrasError, run_server
+
+    if port < 1 or port > 65535:
+        _fail(f"Invalid port {port}; must be between 1 and 65535", 1)
+
+    try:
+        console.print(
+            f"Starting Grapheinstein serve on http://{host}:{port} "
+            "(see docs/agent-integration.md)"
+        )
+        run_server(host=host, port=port)
+    except ServeExtrasError as exc:
+        _fail(str(exc), 1)
+    except OSError as exc:
+        _fail(f"Failed to bind {host}:{port}: {exc}", 1)
+    except Exception as exc:  # noqa: BLE001
+        _fail(f"Serve failed: {exc}", 1)
 
 
 @cli.command("visualize")

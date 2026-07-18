@@ -79,6 +79,8 @@ def merge_media_ocr(
             continue
         if attrs.get("metadata", {}).get("symlink"):
             continue
+        if attrs.get("metadata", {}).get("skipped"):
+            continue
         suffix = Path(node_id).suffix.lower()
         if suffix not in IMAGE_EXTENSIONS:
             continue

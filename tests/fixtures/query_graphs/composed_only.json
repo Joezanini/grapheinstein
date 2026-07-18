@@ -1,0 +1,61 @@
+{
+  "schema_version": "6.0.0",
+  "directed": true,
+  "multigraph": false,
+  "graph": {
+    "project_root": "/projects/query-composed",
+    "generated_at": "2026-07-17T00:00:00Z"
+  },
+  "nodes": [
+    {
+      "id": ".",
+      "type": "dir",
+      "metadata": {}
+    },
+    {
+      "id": "config.py",
+      "type": "file",
+      "metadata": {}
+    },
+    {
+      "id": "config.py::load_settings",
+      "type": "function",
+      "metadata": {
+        "name": "load_settings",
+        "language": "python",
+        "file": "config.py",
+        "start_line": 1
+      }
+    },
+    {
+      "id": "concept::configuration",
+      "type": "concept",
+      "metadata": {
+        "name": "Configuration",
+        "kind": "domain_term"
+      }
+    }
+  ],
+  "links": [
+    {
+      "source": ".",
+      "target": "config.py",
+      "type": "contains",
+      "provenance": "extracted"
+    },
+    {
+      "source": "config.py",
+      "target": "config.py::load_settings",
+      "type": "defines",
+      "provenance": "extracted"
+    },
+    {
+      "source": "concept::configuration",
+      "target": "config.py::load_settings",
+      "type": "mentions",
+      "provenance": "inferred",
+      "confidence": 0.85,
+      "evidence": "settings"
+    }
+  ]
+}

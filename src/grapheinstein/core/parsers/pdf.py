@@ -63,7 +63,9 @@ def merge_pdf_structure(graph: nx.DiGraph, project_root: Path) -> int:
     file_ids = [
         n
         for n, attrs in graph.nodes(data=True)
-        if attrs.get("type") == "file" and Path(n).suffix.lower() in PDF_EXTENSIONS
+        if attrs.get("type") == "file"
+        and Path(n).suffix.lower() in PDF_EXTENSIONS
+        and not (attrs.get("metadata") or {}).get("skipped")
     ]
     for file_id in sorted(file_ids):
         path = root / file_id

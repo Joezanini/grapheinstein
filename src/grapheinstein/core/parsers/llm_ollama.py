@@ -5,12 +5,23 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from loguru import logger
 
+from grapheinstein.core.cache import (
+    KIND_EMBEDDING,
+    content_hash_text,
+    settings_hash,
+)
+
+if TYPE_CHECKING:
+    from grapheinstein.core.cache import CacheStore
+
 DEFAULT_BASE_URL = "http://localhost:11434"
 DEFAULT_MODEL = "qwen3.5-2b-mlx:fp16-8gbGPU"
+
+_EMBEDDING_API_VERSION = 1
 
 ENRICH_FORMAT: dict[str, Any] = {
     "type": "object",
@@ -197,33 +208,69 @@ def chat_text(
     return content.strip()
 
 
+def _embed_one(text: str, *, model: str, url: str, timeout: float) -> list[float]:
+    body = {"model": model, "prompt": text}
+    payload = _request_json("POST", url, body=body, timeout=timeout)
+    if not isinstance(payload, dict):
+        raise OllamaError("Ollama embeddings response was not an object")
+    embedding = payload.get("embedding")
+    if not isinstance(embedding, list) or not embedding:
+        raise OllamaError("Ollama embeddings returned empty embedding")
+    try:
+        return [float(x) for x in embedding]
+    except (TypeError, ValueError) as exc:
+        raise OllamaError(f"Ollama embedding values must be numeric: {exc}") from exc
+
+
 def embed_texts(
     texts: list[str],
     *,
     model: str,
     base_url: str = DEFAULT_BASE_URL,
     timeout: float = 120.0,
+    cache: "CacheStore | None" = None,
 ) -> list[list[float]]:
     """
     Embed texts via Ollama POST /api/embeddings (one request per text).
     Raises OllamaError on failure so callers can soft-skip.
+
+    When ``cache`` is provided, each text's vector is looked up (and stored)
+    by a hash of its content plus the embedding model/API-shape settings, so
+    unchanged text/model combinations avoid re-calling the local model.
     """
     if not texts:
         return []
     url = base_url.rstrip("/") + "/api/embeddings"
+    settings = settings_hash(
+        {"kind": KIND_EMBEDDING, "model": model, "v": _EMBEDDING_API_VERSION}
+    )
     vectors: list[list[float]] = []
     for text in texts:
-        body = {"model": model, "prompt": text}
-        payload = _request_json("POST", url, body=body, timeout=timeout)
-        if not isinstance(payload, dict):
-            raise OllamaError("Ollama embeddings response was not an object")
-        embedding = payload.get("embedding")
-        if not isinstance(embedding, list) or not embedding:
-            raise OllamaError("Ollama embeddings returned empty embedding")
+        if cache is None:
+            vectors.append(_embed_one(text, model=model, url=url, timeout=timeout))
+            continue
+
+        content_hash = content_hash_text(text)
+        cached = cache.get(KIND_EMBEDDING, content_hash, content_hash, settings)
+        if cached is not None:
+            try:
+                vectors.append(json.loads(cached.decode("utf-8")))
+                continue
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                logger.warning("Embedding cache payload corrupt: {} — recomputing", exc)
+
+        vector = _embed_one(text, model=model, url=url, timeout=timeout)
         try:
-            vectors.append([float(x) for x in embedding])
-        except (TypeError, ValueError) as exc:
-            raise OllamaError(f"Ollama embedding values must be numeric: {exc}") from exc
+            cache.put(
+                KIND_EMBEDDING,
+                content_hash,
+                content_hash,
+                settings,
+                json.dumps(vector).encode("utf-8"),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Embedding cache write failed: {}", exc)
+        vectors.append(vector)
     return vectors
 
 

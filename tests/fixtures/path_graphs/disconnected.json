@@ -1,0 +1,72 @@
+{
+  "schema_version": "6.0.0",
+  "directed": true,
+  "multigraph": false,
+  "graph": {
+    "project_root": "/projects/path-disconnected",
+    "generated_at": "2026-07-17T00:00:00Z"
+  },
+  "nodes": [
+    {
+      "id": ".",
+      "type": "dir",
+      "metadata": {}
+    },
+    {
+      "id": "a.py",
+      "type": "file",
+      "metadata": {}
+    },
+    {
+      "id": "b.py",
+      "type": "file",
+      "metadata": {}
+    },
+    {
+      "id": "concept::island-a",
+      "type": "concept",
+      "metadata": {
+        "name": "island-a",
+        "kind": "domain_term"
+      }
+    },
+    {
+      "id": "concept::island-b",
+      "type": "concept",
+      "metadata": {
+        "name": "island-b",
+        "kind": "domain_term"
+      }
+    }
+  ],
+  "links": [
+    {
+      "source": ".",
+      "target": "a.py",
+      "type": "contains",
+      "provenance": "extracted"
+    },
+    {
+      "source": ".",
+      "target": "b.py",
+      "type": "contains",
+      "provenance": "extracted"
+    },
+    {
+      "source": "concept::island-a",
+      "target": "a.py",
+      "type": "mentions",
+      "provenance": "extracted",
+      "confidence": 0.9,
+      "evidence": "island a only"
+    },
+    {
+      "source": "concept::island-b",
+      "target": "b.py",
+      "type": "mentions",
+      "provenance": "extracted",
+      "confidence": 0.9,
+      "evidence": "island b only"
+    }
+  ]
+}

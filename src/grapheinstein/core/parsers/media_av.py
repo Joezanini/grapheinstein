@@ -124,6 +124,8 @@ def merge_media_av(
             continue
         if attrs.get("metadata", {}).get("symlink"):
             continue
+        if attrs.get("metadata", {}).get("skipped"):
+            continue
         suffix = Path(node_id).suffix.lower()
         if suffix not in AV_EXTENSIONS:
             continue

@@ -222,10 +222,12 @@ def explain_concept(
     want_summary: bool = True,
     llm_model: str = DEFAULT_MODEL,
     llm_base_url: str = DEFAULT_BASE_URL,
+    embedding_model: str | None = None,
     use_embeddings: bool = True,
     chat_fn: Callable[..., str] | None = None,
     embed_fn: Callable[[list[str]], list[list[float]]] | None = None,
     list_models_fn: Callable[[str], list[str]] | None = None,
+    cache=None,
 ) -> ExplainResult:
     """
     Match concept, write neighborhood subgraph, optionally summarize.
@@ -250,19 +252,25 @@ def explain_concept(
 
     active_embed: Callable[[list[str]], list[list[float]]] | None = None
     embed_note: str | None = None
+    embed_model = embedding_model or llm_model
     if use_embeddings:
         if embed_fn is not None:
             active_embed = embed_fn
         else:
             ready, ready_msg = check_ready(
-                model=llm_model,
+                model=embed_model,
                 base_url=llm_base_url,
                 list_models_fn=list_models_fn,
             )
             if ready:
 
                 def _default_embed(texts: list[str]) -> list[list[float]]:
-                    return embed_texts(texts, model=llm_model, base_url=llm_base_url)
+                    return embed_texts(
+                        texts,
+                        model=embed_model,
+                        base_url=llm_base_url,
+                        cache=cache,
+                    )
 
                 active_embed = _default_embed
             else:
