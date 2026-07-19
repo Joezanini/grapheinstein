@@ -32,3 +32,32 @@ def test_oversize_marked_on_inventory():
         if s == "big_blob.bin" or (isinstance(t, str) and t.startswith("big_blob.bin#"))
     ]
     assert not children
+
+
+def test_code_only_default_ignores_exclude_docs_dyn():
+    from grapheinstein.utils import CODE_ONLY_DEFAULT_IGNORES, effective_ignored_patterns
+
+    merged = effective_ignored_patterns(
+        ["secret_dir/"], code_only=True, include_generated_docs=False
+    )
+    assert "secret_dir/" in merged
+    for pattern in CODE_ONLY_DEFAULT_IGNORES:
+        assert pattern in merged
+
+    opted = effective_ignored_patterns(
+        ["secret_dir/"], code_only=True, include_generated_docs=True
+    )
+    assert opted == ("secret_dir/",)
+    assert "docs/" not in opted
+
+
+def test_code_only_discovery_skips_docs_dyn():
+    fix = Path(__file__).resolve().parents[1] / "fixtures" / "large_repo_guards"
+    from grapheinstein.utils import effective_ignored_patterns
+
+    patterns = effective_ignored_patterns([], code_only=True, include_generated_docs=False)
+    paths = discover_paths(fix, ignored_patterns=patterns)
+    ids = {rel for rel, _typ, _meta in paths}
+    assert "pkg/a.py" in ids
+    assert not any(i.startswith("docs/") for i in ids)
+    assert not any(i.startswith("discovery_cache") for i in ids)

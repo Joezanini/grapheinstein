@@ -234,3 +234,53 @@ def test_write_config_template_creates_and_refuses(tmp_path: Path):
     with pytest.raises(ConfigError, match="already exists"):
         write_config_template(dest, force=False)
     write_config_template(dest, force=True)
+
+
+def test_large_repo_guard_config_defaults_and_validation(tmp_path: Path):
+    from grapheinstein.utils import (
+        DEFAULT_MAX_FILE_COUNT,
+        DEFAULT_MAX_REFERENCE_SCAN_BYTES,
+        DEFAULT_MAX_REFERENCE_SCAN_OPS,
+        DEFAULT_MAX_TOTAL_BYTES,
+        effective_ignored_patterns,
+    )
+
+    missing = tmp_path / "no-config.yaml"
+    cfg = load_config(user_config_path=missing)
+    assert cfg.code_only is False
+    assert cfg.include_generated_docs is False
+    assert cfg.max_reference_scan_bytes == DEFAULT_MAX_REFERENCE_SCAN_BYTES
+    assert cfg.max_reference_scan_ops == DEFAULT_MAX_REFERENCE_SCAN_OPS
+    assert cfg.max_total_bytes == DEFAULT_MAX_TOTAL_BYTES
+    assert cfg.max_file_count == DEFAULT_MAX_FILE_COUNT
+    assert cfg.timeout_seconds == 0
+    assert cfg.large_repo_policy == "reject"
+
+    cfg_file = tmp_path / "g.yaml"
+    cfg_file.write_text(
+        "code_only: true\n"
+        "max_reference_scan_ops: 100\n"
+        "max_non_code_share: 0.5\n"
+        "large_repo_policy: allow\n",
+        encoding="utf-8",
+    )
+    cfg2 = load_config(config_path=cfg_file)
+    assert cfg2.code_only is True
+    assert cfg2.max_reference_scan_ops == 100
+    assert cfg2.max_non_code_share == 0.5
+    assert cfg2.large_repo_policy == "allow"
+
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("max_file_count: 0\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="max_file_count"):
+        load_config(config_path=bad)
+
+    bad2 = tmp_path / "bad2.yaml"
+    bad2.write_text("large_repo_policy: maybe\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="large_repo_policy"):
+        load_config(config_path=bad2)
+
+    assert "docs/" in effective_ignored_patterns([], code_only=True)
+    assert "docs/" not in effective_ignored_patterns(
+        [], code_only=True, include_generated_docs=True
+    )

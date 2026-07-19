@@ -14,6 +14,8 @@ from grapheinstein.api import (
     ConfigError,
     EmptyCorpusError,
     GraphError,
+    IndexTimeoutError,
+    LargeRepoError,
     MediaExtrasError,
     NoEvidenceError,
     QueryError,
@@ -40,6 +42,15 @@ class IndexBody(BaseModel):
     llm_model: str | None = None
     embedding_model: str | None = None
     llm_base_url: str | None = None
+    code_only: bool = False
+    include_generated_docs: bool = False
+    allow_large_repo: bool = False
+    max_reference_scan_bytes: int | None = None
+    max_reference_scan_ops: int | None = None
+    max_non_code_share: float | None = None
+    max_total_bytes: int | None = None
+    max_file_count: int | None = None
+    timeout_seconds: int | None = None
 
 
 class QueryBody(BaseModel):
@@ -66,6 +77,10 @@ def _error(status: int, message: str, code: str) -> JSONResponse:
 def _map_exception(exc: BaseException) -> JSONResponse:
     if isinstance(exc, (FileNotFoundError, NotADirectoryError)):
         return _error(404, str(exc), "not_found")
+    if isinstance(exc, LargeRepoError):
+        return _error(400, str(exc), "large_repo")
+    if isinstance(exc, IndexTimeoutError):
+        return _error(408, str(exc), "timeout")
     if isinstance(exc, ConfigError):
         return _error(400, str(exc), "config")
     if isinstance(exc, NoEvidenceError):
@@ -113,6 +128,15 @@ def build_app() -> FastAPI:
                     llm_model=body.llm_model,
                     embedding_model=body.embedding_model,
                     llm_base_url=body.llm_base_url,
+                    code_only=body.code_only,
+                    include_generated_docs=body.include_generated_docs,
+                    allow_large_repo=body.allow_large_repo,
+                    max_reference_scan_bytes=body.max_reference_scan_bytes,
+                    max_reference_scan_ops=body.max_reference_scan_ops,
+                    max_non_code_share=body.max_non_code_share,
+                    max_total_bytes=body.max_total_bytes,
+                    max_file_count=body.max_file_count,
+                    timeout_seconds=body.timeout_seconds,
                     show_progress=False,
                 )
             except Exception as exc:  # noqa: BLE001

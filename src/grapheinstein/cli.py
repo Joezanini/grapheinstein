@@ -32,6 +32,8 @@ from grapheinstein.core.visualize import load_graph_for_visualize, print_summary
 from grapheinstein.utils import (
     USER_CONFIG_PATH,
     ConfigError,
+    IndexTimeoutError,
+    LargeRepoError,
     console,
     load_config,
     setup_logging,
@@ -174,6 +176,9 @@ def _run_index(
     embedding_model: str | None,
     compress: bool,
     versioned: bool,
+    code_only: bool = False,
+    include_generated_docs: bool = False,
+    allow_large_repo: bool = False,
 ) -> None:
     try:
         result = api_index(
@@ -190,8 +195,15 @@ def _run_index(
             embedding_model=embedding_model,
             compress=compress,
             versioned=versioned,
+            code_only=code_only,
+            include_generated_docs=include_generated_docs,
+            allow_large_repo=allow_large_repo,
             show_progress=sys.stderr.isatty(),
         )
+    except LargeRepoError as exc:
+        _fail(str(exc), 2)
+    except IndexTimeoutError as exc:
+        _fail(str(exc), 3)
     except ConfigError as exc:
         _fail(str(exc), 1)
     except MediaExtrasError as exc:
@@ -313,6 +325,24 @@ def index_cmd(
         "--versioned",
         help="Also write next graph_vN.json[.gz] snapshot beside primary output",
     ),
+    code_only: bool = typer.Option(
+        False,
+        "--code-only",
+        help=(
+            "Exclude generated docs/ and discovery_cache/ by default; "
+            "restrict reference sources to code extensions"
+        ),
+    ),
+    include_generated_docs: bool = typer.Option(
+        False,
+        "--include-generated-docs",
+        help="With --code-only, include docs/ and discovery_cache/ in inventory",
+    ),
+    allow_large_repo: bool = typer.Option(
+        False,
+        "--allow-large-repo",
+        help="Bypass advisory scan-cost / non-code-share gates (hard caps still apply)",
+    ),
     config: Path | None = typer.Option(
         None,
         "--config",
@@ -334,6 +364,9 @@ def index_cmd(
         embedding_model=embedding_model,
         compress=compress,
         versioned=versioned,
+        code_only=code_only,
+        include_generated_docs=include_generated_docs,
+        allow_large_repo=allow_large_repo,
     )
 
 

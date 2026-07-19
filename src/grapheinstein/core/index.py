@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -29,8 +30,24 @@ from grapheinstein.core.parsers.media_ocr import (
     merge_media_ocr,
 )
 from grapheinstein.core.parsers.pdf import merge_pdf_structure
+from grapheinstein.core.preflight import (
+    compute_scan_cost_estimate,
+    enforce_large_repo_gates,
+)
 from grapheinstein.core.references import add_reference_edges
-from grapheinstein.utils import DEFAULT_MAX_FILE_SIZE, resolve_project_path
+from grapheinstein.utils import (
+    DEFAULT_LARGE_REPO_POLICY,
+    DEFAULT_MAX_FILE_COUNT,
+    DEFAULT_MAX_FILE_SIZE,
+    DEFAULT_MAX_NON_CODE_SHARE,
+    DEFAULT_MAX_REFERENCE_SCAN_BYTES,
+    DEFAULT_MAX_REFERENCE_SCAN_OPS,
+    DEFAULT_MAX_TOTAL_BYTES,
+    DEFAULT_TIMEOUT_SECONDS,
+    IndexTimeoutError,
+    effective_ignored_patterns,
+    resolve_project_path,
+)
 
 
 def load_gitignore_spec(project_root: Path) -> pathspec.PathSpec | None:
@@ -222,6 +239,14 @@ def _make_progress(show_progress: bool, total: int, description: str = "Indexing
         return _NullProgress()
 
 
+def _check_deadline(deadline: float | None, phase: str) -> None:
+    if deadline is not None and time.monotonic() > deadline:
+        raise IndexTimeoutError(
+            f"Indexing timed out during {phase}",
+            phase=phase,
+        )
+
+
 def build_inventory_graph(
     project_root: Path,
     *,
@@ -244,6 +269,15 @@ def build_inventory_graph(
     cache_dir: Path | str | None = None,
     embedding_model: str | None = None,
     show_progress: bool = False,
+    code_only: bool = False,
+    include_generated_docs: bool = False,
+    max_reference_scan_bytes: int | None = None,
+    max_reference_scan_ops: int | None = None,
+    max_non_code_share: float | None = None,
+    max_total_bytes: int | None = None,
+    max_file_count: int | None = None,
+    timeout_seconds: int | None = None,
+    large_repo_policy: str | None = None,
 ):
     from grapheinstein.core.parsers.llm_enrich import (
         DEFAULT_CONFIDENCE_THRESHOLD,
@@ -260,17 +294,53 @@ def build_inventory_graph(
         ensure_media_deps()
 
     max_size = int(max_file_size) if max_file_size is not None else DEFAULT_MAX_FILE_SIZE
+    scan_bytes = (
+        int(max_reference_scan_bytes)
+        if max_reference_scan_bytes is not None
+        else DEFAULT_MAX_REFERENCE_SCAN_BYTES
+    )
+    scan_ops = (
+        int(max_reference_scan_ops)
+        if max_reference_scan_ops is not None
+        else DEFAULT_MAX_REFERENCE_SCAN_OPS
+    )
+    non_code_share_cap = (
+        float(max_non_code_share)
+        if max_non_code_share is not None
+        else DEFAULT_MAX_NON_CODE_SHARE
+    )
+    total_bytes_cap = (
+        int(max_total_bytes) if max_total_bytes is not None else DEFAULT_MAX_TOTAL_BYTES
+    )
+    file_count_cap = (
+        int(max_file_count) if max_file_count is not None else DEFAULT_MAX_FILE_COUNT
+    )
+    timeout = (
+        int(timeout_seconds) if timeout_seconds is not None else DEFAULT_TIMEOUT_SECONDS
+    )
+    policy = (large_repo_policy or DEFAULT_LARGE_REPO_POLICY).lower()
+    deadline = time.monotonic() + timeout if timeout > 0 else None
+    phase = "discovery"
 
     cache: CacheStore | None = None
     if cache_dir is not None:
         cache = CacheStore(Path(cache_dir))
 
-    graph = new_inventory_graph(root)
-    discovered = discover_paths(root, ignored_patterns=ignored_patterns)
+    effective_ignores = effective_ignored_patterns(
+        ignored_patterns,
+        code_only=code_only,
+        include_generated_docs=include_generated_docs,
+    )
 
+    graph = new_inventory_graph(root)
+    _check_deadline(deadline, phase)
+    discovered = discover_paths(root, ignored_patterns=effective_ignores)
+
+    phase = "inventory"
     skipped_oversize = 0
     with _make_progress(show_progress, len(discovered), "Discovering files") as progress:
         for rel, node_type, metadata in discovered:
+            _check_deadline(deadline, phase)
             if rel == ".":
                 progress.advance()
                 continue
@@ -290,9 +360,10 @@ def build_inventory_graph(
                             size_bytes = (root / rel).stat().st_size
                         except OSError:
                             size_bytes = None
+                        if size_bytes is not None:
+                            file_metadata["size_bytes"] = size_bytes
                         if size_bytes is not None and size_bytes > max_size:
                             file_metadata["skipped"] = "oversize"
-                            file_metadata["size_bytes"] = size_bytes
                             skipped_oversize += 1
                             logger.warning(
                                 "Skipping oversize file {} ({} bytes > max_file_size {})",
@@ -304,8 +375,35 @@ def build_inventory_graph(
                     add_contains_edge(graph, parent_id, rel)
             progress.advance()
 
-    add_reference_edges(graph, root)
+    phase = "preflight"
+    _check_deadline(deadline, phase)
+    estimate = compute_scan_cost_estimate(graph, code_only=code_only, project_root=root)
+    enforce_large_repo_gates(
+        estimate,
+        code_only=code_only,
+        max_total_bytes=total_bytes_cap,
+        max_file_count=file_count_cap,
+        max_reference_scan_ops=scan_ops,
+        max_non_code_share=non_code_share_cap,
+        large_repo_policy=policy,
+    )
+    graph.graph["scan_cost_ops"] = estimate.estimated_scan_ops
+    graph.graph["non_code_share"] = estimate.non_code_share
+
+    phase = "references"
+    _check_deadline(deadline, phase)
+    add_reference_edges(
+        graph,
+        root,
+        code_only=code_only,
+        max_reference_scan_bytes=scan_bytes,
+        deadline_monotonic=deadline,
+        on_timeout_phase=phase,
+    )
+
     enabled = list(languages) if languages is not None else list(DEFAULT_LANGUAGES)
+    phase = "code_structure"
+    _check_deadline(deadline, phase)
     progress2 = _make_progress(show_progress, 1, "Parsing structure")
     with progress2:
         skips = merge_code_structure(graph, root, enabled, cache=cache)
@@ -315,6 +413,7 @@ def build_inventory_graph(
     graph.graph["include_pdfs"] = bool(include_pdfs)
     graph.graph["transcribe_media"] = bool(transcribe_media)
     graph.graph["enrich_llm"] = bool(enrich_llm)
+    graph.graph["code_only"] = bool(code_only)
     graph.graph["skipped_oversize"] = skipped_oversize
     model = llm_model or DEFAULT_MODEL
     embed_model = embedding_model or model
@@ -327,15 +426,21 @@ def build_inventory_graph(
     if enrich_llm:
         graph.graph["llm_model"] = model
     graph.graph["embedding_model"] = embed_model
+
+    phase = "optional_enrichment"
     if include_docs:
+        _check_deadline(deadline, phase)
         skips += merge_docs_structure(graph, root)
     if include_pdfs:
+        _check_deadline(deadline, phase)
         skips += merge_pdf_structure(graph, root)
     if transcribe_media:
+        _check_deadline(deadline, phase)
         skips += merge_media_ocr(graph, root, extract_text=ocr_extract)
         skips += merge_media_av(graph, root, transcribe=av_transcribe)
         merge_media_links(graph)
     if enrich_llm:
+        _check_deadline(deadline, phase)
         ready = True
         if llm_chat is not None:
             ready = True
@@ -389,6 +494,15 @@ def index_project(
     cache_dir: Path | str | None = None,
     embedding_model: str | None = None,
     show_progress: bool = False,
+    code_only: bool = False,
+    include_generated_docs: bool = False,
+    max_reference_scan_bytes: int | None = None,
+    max_reference_scan_ops: int | None = None,
+    max_non_code_share: float | None = None,
+    max_total_bytes: int | None = None,
+    max_file_count: int | None = None,
+    timeout_seconds: int | None = None,
+    large_repo_policy: str | None = None,
 ):
     """Index project and write graph.json artifact. Returns (path, stats)."""
     root = resolve_project_path(project_root)
@@ -413,6 +527,15 @@ def index_project(
         cache_dir=cache_dir,
         embedding_model=embedding_model,
         show_progress=show_progress,
+        code_only=code_only,
+        include_generated_docs=include_generated_docs,
+        max_reference_scan_bytes=max_reference_scan_bytes,
+        max_reference_scan_ops=max_reference_scan_ops,
+        max_non_code_share=max_non_code_share,
+        max_total_bytes=max_total_bytes,
+        max_file_count=max_file_count,
+        timeout_seconds=timeout_seconds,
+        large_repo_policy=large_repo_policy,
     )
     written = save_graph(graph, output_path, compress=compress, versioned=versioned)
     artifact = to_artifact_dict(graph)

@@ -20,7 +20,13 @@ from grapheinstein.core.query import (
     QueryError,
     run_query,
 )
-from grapheinstein.utils import ConfigError, load_config, setup_logging
+from grapheinstein.utils import (
+    ConfigError,
+    IndexTimeoutError,
+    LargeRepoError,
+    load_config,
+    setup_logging,
+)
 
 __all__ = [
     "IndexResult",
@@ -33,6 +39,8 @@ __all__ = [
     "QueryError",
     "EmptyCorpusError",
     "NoEvidenceError",
+    "LargeRepoError",
+    "IndexTimeoutError",
 ]
 
 
@@ -89,12 +97,22 @@ def index(
     versioned: bool = False,
     include_artifact: bool = False,
     show_progress: bool = False,
+    code_only: bool = False,
+    include_generated_docs: bool = False,
+    allow_large_repo: bool = False,
+    max_reference_scan_bytes: int | None = None,
+    max_reference_scan_ops: int | None = None,
+    max_non_code_share: float | None = None,
+    max_total_bytes: int | None = None,
+    max_file_count: int | None = None,
+    timeout_seconds: int | None = None,
 ) -> IndexResult:
     """
     Index a project folder into a portable graph (CLI `index` semantics).
 
     Raises FileNotFoundError, NotADirectoryError, OSError, ConfigError,
-    GraphError, MediaExtrasError on hard failures — never returns an empty success.
+    GraphError, MediaExtrasError, LargeRepoError, IndexTimeoutError on hard
+    failures — never returns an empty success.
     """
     languages_override = _normalize_languages(languages)
     cfg = load_config(
@@ -106,6 +124,15 @@ def index(
         embedding_model_override=embedding_model,
         compress_override=True if compress else None,
         versioned_override=True if versioned else None,
+        code_only_override=True if code_only else None,
+        include_generated_docs_override=True if include_generated_docs else None,
+        allow_large_repo_override=True if allow_large_repo else None,
+        max_reference_scan_bytes_override=max_reference_scan_bytes,
+        max_reference_scan_ops_override=max_reference_scan_ops,
+        max_non_code_share_override=max_non_code_share,
+        max_total_bytes_override=max_total_bytes,
+        max_file_count_override=max_file_count,
+        timeout_seconds_override=timeout_seconds,
     )
     setup_logging(cfg.log_level)
     output_path = Path(cfg.output)
@@ -128,6 +155,15 @@ def index(
         cache_dir=cfg.cache_dir,
         embedding_model=cfg.embedding_model,
         show_progress=show_progress,
+        code_only=cfg.code_only,
+        include_generated_docs=cfg.include_generated_docs,
+        max_reference_scan_bytes=cfg.max_reference_scan_bytes,
+        max_reference_scan_ops=cfg.max_reference_scan_ops,
+        max_non_code_share=cfg.max_non_code_share,
+        max_total_bytes=cfg.max_total_bytes,
+        max_file_count=cfg.max_file_count,
+        timeout_seconds=cfg.timeout_seconds,
+        large_repo_policy=cfg.large_repo_policy,
     )
 
     artifact: dict[str, Any] | None = None

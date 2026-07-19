@@ -54,6 +54,21 @@ DEFAULT_IGNORED_PATTERNS: tuple[str, ...] = (
 )
 DEFAULT_EMBEDDING_MODEL = DEFAULT_MODEL
 
+CODE_ONLY_DEFAULT_IGNORES: tuple[str, ...] = (
+    "docs/",
+    "docs/dyn/",
+    "**/docs/dyn/",
+    "discovery_cache/",
+    "**/discovery_cache/",
+)
+DEFAULT_MAX_REFERENCE_SCAN_BYTES = 262_144
+DEFAULT_MAX_REFERENCE_SCAN_OPS = 5_000_000
+DEFAULT_MAX_NON_CODE_SHARE = 0.85
+DEFAULT_MAX_TOTAL_BYTES = 838_860_800
+DEFAULT_MAX_FILE_COUNT = 20_000
+DEFAULT_TIMEOUT_SECONDS = 0
+DEFAULT_LARGE_REPO_POLICY = "reject"
+
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -84,10 +99,59 @@ class AppConfig:
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
     max_file_size: int = DEFAULT_MAX_FILE_SIZE
     cache_dir: Path = field(default_factory=lambda: DEFAULT_CACHE_DIR)
+    code_only: bool = False
+    include_generated_docs: bool = False
+    max_reference_scan_bytes: int = DEFAULT_MAX_REFERENCE_SCAN_BYTES
+    max_reference_scan_ops: int = DEFAULT_MAX_REFERENCE_SCAN_OPS
+    max_non_code_share: float = DEFAULT_MAX_NON_CODE_SHARE
+    max_total_bytes: int = DEFAULT_MAX_TOTAL_BYTES
+    max_file_count: int = DEFAULT_MAX_FILE_COUNT
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
+    large_repo_policy: str = DEFAULT_LARGE_REPO_POLICY
 
 
 class ConfigError(Exception):
     """Raised when a config file cannot be loaded or validated."""
+
+
+class LargeRepoError(Exception):
+    """Raised when large-repo preflight rejects an index run."""
+
+    def __init__(self, message: str, *, tripped_gates: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.tripped_gates = tripped_gates
+
+
+class IndexTimeoutError(Exception):
+    """Raised when cooperative indexing deadline is exceeded."""
+
+    def __init__(self, message: str, *, phase: str = "unknown") -> None:
+        super().__init__(message)
+        self.phase = phase
+
+
+def effective_ignored_patterns(
+    config_patterns: Sequence[str] | None,
+    *,
+    code_only: bool = False,
+    include_generated_docs: bool = False,
+) -> tuple[str, ...]:
+    """
+    Merge user/config ignore patterns with code-only default excludes.
+
+    When ``code_only`` is true and ``include_generated_docs`` is false, append
+    ``CODE_ONLY_DEFAULT_IGNORES`` after the caller patterns (dedupe preserving order).
+    """
+    base = list(config_patterns) if config_patterns is not None else []
+    if not code_only or include_generated_docs:
+        return tuple(base)
+    seen = set(base)
+    merged = list(base)
+    for pattern in CODE_ONLY_DEFAULT_IGNORES:
+        if pattern not in seen:
+            merged.append(pattern)
+            seen.add(pattern)
+    return tuple(merged)
 
 
 def setup_logging(level: str = DEFAULT_LOG_LEVEL) -> None:
@@ -209,6 +273,15 @@ def _coerce_config(raw: dict[str, Any], *, source: Path | None) -> dict[str, Any
         "embedding_model",
         "max_file_size",
         "cache_dir",
+        "code_only",
+        "include_generated_docs",
+        "max_reference_scan_bytes",
+        "max_reference_scan_ops",
+        "max_non_code_share",
+        "max_total_bytes",
+        "max_file_count",
+        "timeout_seconds",
+        "large_repo_policy",
     }
     unknown = set(raw) - known
     for key in sorted(unknown):
@@ -336,6 +409,50 @@ def _coerce_config(raw: dict[str, Any], *, source: Path | None) -> dict[str, Any
         result["cache_dir"] = _coerce_non_empty_str(
             raw["cache_dir"], key="cache_dir", source=source
         )
+    if "code_only" in raw:
+        result["code_only"] = _coerce_bool(raw["code_only"], key="code_only", source=source)
+    if "include_generated_docs" in raw:
+        result["include_generated_docs"] = _coerce_bool(
+            raw["include_generated_docs"], key="include_generated_docs", source=source
+        )
+    if "max_reference_scan_bytes" in raw:
+        result["max_reference_scan_bytes"] = _coerce_positive_int(
+            raw["max_reference_scan_bytes"], key="max_reference_scan_bytes", source=source
+        )
+    if "max_reference_scan_ops" in raw:
+        result["max_reference_scan_ops"] = _coerce_positive_int(
+            raw["max_reference_scan_ops"], key="max_reference_scan_ops", source=source
+        )
+    if "max_non_code_share" in raw:
+        share = _coerce_threshold(
+            raw["max_non_code_share"], key="max_non_code_share", source=source
+        )
+        if share <= 0.0:
+            raise ConfigError(
+                f"Config key 'max_non_code_share' must be in (0.0, 1.0] ({source})"
+            )
+        result["max_non_code_share"] = share
+    if "max_total_bytes" in raw:
+        result["max_total_bytes"] = _coerce_positive_int(
+            raw["max_total_bytes"], key="max_total_bytes", source=source
+        )
+    if "max_file_count" in raw:
+        result["max_file_count"] = _coerce_positive_int(
+            raw["max_file_count"], key="max_file_count", source=source
+        )
+    if "timeout_seconds" in raw:
+        result["timeout_seconds"] = _coerce_non_negative_int(
+            raw["timeout_seconds"], key="timeout_seconds", source=source
+        )
+    if "large_repo_policy" in raw:
+        policy = _coerce_non_empty_str(
+            raw["large_repo_policy"], key="large_repo_policy", source=source
+        ).lower()
+        if policy not in ("reject", "allow"):
+            raise ConfigError(
+                f"Config key 'large_repo_policy' must be 'reject' or 'allow' ({source})"
+            )
+        result["large_repo_policy"] = policy
     return result
 
 
@@ -362,6 +479,15 @@ def load_config(
     embedding_model_override: str | None = None,
     max_file_size_override: int | None = None,
     cache_dir_override: Path | str | None = None,
+    code_only_override: bool | None = None,
+    include_generated_docs_override: bool | None = None,
+    allow_large_repo_override: bool | None = None,
+    max_reference_scan_bytes_override: int | None = None,
+    max_reference_scan_ops_override: int | None = None,
+    max_non_code_share_override: float | None = None,
+    max_total_bytes_override: int | None = None,
+    max_file_count_override: int | None = None,
+    timeout_seconds_override: int | None = None,
     user_config_path: Path | None = None,
 ) -> AppConfig:
     """
@@ -394,6 +520,15 @@ def load_config(
         "embedding_model": DEFAULT_EMBEDDING_MODEL,
         "max_file_size": DEFAULT_MAX_FILE_SIZE,
         "cache_dir": str(DEFAULT_CACHE_DIR),
+        "code_only": False,
+        "include_generated_docs": False,
+        "max_reference_scan_bytes": DEFAULT_MAX_REFERENCE_SCAN_BYTES,
+        "max_reference_scan_ops": DEFAULT_MAX_REFERENCE_SCAN_OPS,
+        "max_non_code_share": DEFAULT_MAX_NON_CODE_SHARE,
+        "max_total_bytes": DEFAULT_MAX_TOTAL_BYTES,
+        "max_file_count": DEFAULT_MAX_FILE_COUNT,
+        "timeout_seconds": DEFAULT_TIMEOUT_SECONDS,
+        "large_repo_policy": DEFAULT_LARGE_REPO_POLICY,
     }
 
     default_user = user_config_path if user_config_path is not None else USER_CONFIG_PATH
@@ -516,6 +651,38 @@ def load_config(
             raise ConfigError("cache_dir must be a non-empty path")
         merged["cache_dir"] = str(cache_dir_override)
 
+    if code_only_override is not None:
+        merged["code_only"] = bool(code_only_override)
+    if include_generated_docs_override is not None:
+        merged["include_generated_docs"] = bool(include_generated_docs_override)
+    if allow_large_repo_override:
+        merged["large_repo_policy"] = "allow"
+    if max_reference_scan_bytes_override is not None:
+        if max_reference_scan_bytes_override < 1:
+            raise ConfigError("max_reference_scan_bytes must be >= 1")
+        merged["max_reference_scan_bytes"] = int(max_reference_scan_bytes_override)
+    if max_reference_scan_ops_override is not None:
+        if max_reference_scan_ops_override < 1:
+            raise ConfigError("max_reference_scan_ops must be >= 1")
+        merged["max_reference_scan_ops"] = int(max_reference_scan_ops_override)
+    if max_non_code_share_override is not None:
+        share = float(max_non_code_share_override)
+        if share <= 0.0 or share > 1.0:
+            raise ConfigError("max_non_code_share must be in (0.0, 1.0]")
+        merged["max_non_code_share"] = share
+    if max_total_bytes_override is not None:
+        if max_total_bytes_override < 1:
+            raise ConfigError("max_total_bytes must be >= 1")
+        merged["max_total_bytes"] = int(max_total_bytes_override)
+    if max_file_count_override is not None:
+        if max_file_count_override < 1:
+            raise ConfigError("max_file_count must be >= 1")
+        merged["max_file_count"] = int(max_file_count_override)
+    if timeout_seconds_override is not None:
+        if timeout_seconds_override < 0:
+            raise ConfigError("timeout_seconds must be >= 0")
+        merged["timeout_seconds"] = int(timeout_seconds_override)
+
     cache_dir_path = Path(str(merged["cache_dir"])).expanduser()
     try:
         cache_dir_path = cache_dir_path.resolve()
@@ -548,6 +715,15 @@ def load_config(
         embedding_model=str(merged["embedding_model"]),
         max_file_size=int(merged["max_file_size"]),
         cache_dir=cache_dir_path,
+        code_only=bool(merged["code_only"]),
+        include_generated_docs=bool(merged["include_generated_docs"]),
+        max_reference_scan_bytes=int(merged["max_reference_scan_bytes"]),
+        max_reference_scan_ops=int(merged["max_reference_scan_ops"]),
+        max_non_code_share=float(merged["max_non_code_share"]),
+        max_total_bytes=int(merged["max_total_bytes"]),
+        max_file_count=int(merged["max_file_count"]),
+        timeout_seconds=int(merged["timeout_seconds"]),
+        large_repo_policy=str(merged["large_repo_policy"]),
     )
 
 
@@ -577,6 +753,32 @@ max_file_size: {DEFAULT_MAX_FILE_SIZE}
 
 # Directory for the local parse/chunk/embedding cache (created on first use).
 cache_dir: "{DEFAULT_CACHE_DIR}"
+
+# When true, apply code-only default ignores (docs/, discovery_cache/) and
+# restrict reference *sources* to Tree-sitter code extensions.
+# code_only: false
+
+# When true with code_only, do NOT apply built-in docs/discovery_cache ignores.
+# include_generated_docs: false
+
+# Max bytes read per file during reference linking (basename mentions).
+# max_reference_scan_bytes: {DEFAULT_MAX_REFERENCE_SCAN_BYTES}
+
+# Reject when eligible_scan_files * unique_basenames exceeds this (unless allow).
+# max_reference_scan_ops: {DEFAULT_MAX_REFERENCE_SCAN_OPS}
+
+# Reject under code_only when non-code byte share exceeds this (unless allow).
+# max_non_code_share: {DEFAULT_MAX_NON_CODE_SHARE}
+
+# Hard inventory caps (always enforced).
+# max_total_bytes: {DEFAULT_MAX_TOTAL_BYTES}
+# max_file_count: {DEFAULT_MAX_FILE_COUNT}
+
+# Cooperative index timeout in seconds (0 disables).
+# timeout_seconds: {DEFAULT_TIMEOUT_SECONDS}
+
+# reject | allow — allow bypasses advisory scan-ops / non-code-share gates only.
+# large_repo_policy: "{DEFAULT_LARGE_REPO_POLICY}"
 
 # Path for the graph.json artifact written by `grapheinstein index`.
 output: "{DEFAULT_OUTPUT}"
