@@ -16,15 +16,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Troubleshooting section in README with common failure scenarios
 - Integration and unit tests for empty/sparse graph detection
 - Better error context in exception messages (includes exception type for unexpected errors)
+- `GRAPHEINSTEIN_DEBUG_LOG` environment variable for debugging silent failures
+- Explicit stderr flushing to ensure errors are captured even if process is killed
+- At-exit handler to flush stderr before process termination
 
 ### Changed
 - CLI error handling now distinguishes transient errors (I/O) from permanent errors (config, validation)
 - Error messages now indicate error category to help with debugging and retry logic
 - Timeout check now stores budget for warning calculation
+- Error handler has fallback to raw stderr if Rich formatting fails
 
 ### Fixed
 - Improved visibility of parse failures and empty graph scenarios
 - Better error messages for operators running grapheinstein in automated environments (CI, Librarian)
+- Stderr flushing race condition that could cause empty stderr in subprocess calls
+- Error handling robustness - now has fallback if Rich fails
 
 ## [0.2.0] - (Previous release)
 - Schema version 6.0.0

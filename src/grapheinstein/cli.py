@@ -118,9 +118,28 @@ def prepend_index_if_needed(args: list[str]) -> list[str]:
 
 
 def _fail(message: str, code: int = 1) -> None:
-    from rich.markup import escape
-
-    console.print(f"[red]Error:[/red] {escape(message)}")
+    import sys
+    import os
+    
+    try:
+        from rich.markup import escape
+        console.print(f"[red]Error:[/red] {escape(message)}")
+    except Exception:
+        # Fallback if Rich fails - print to raw stderr
+        print(f"Error: {message}", file=sys.stderr)
+    
+    # Also write to diagnostic log if GRAPHEINSTEIN_DEBUG_LOG is set
+    debug_log = os.environ.get("GRAPHEINSTEIN_DEBUG_LOG")
+    if debug_log:
+        try:
+            with open(debug_log, "a") as f:
+                f.write(f"ERROR (exit {code}): {message}\n")
+                f.flush()
+        except Exception:
+            pass
+    
+    # Explicitly flush stderr to ensure message is captured even if process is killed
+    sys.stderr.flush()
     raise typer.Exit(code)
 
 
@@ -189,6 +208,10 @@ def _print_index_summary(stats, output_path: Path) -> None:
                 f"[yellow]Warning:[/yellow] High parse skip ratio: {stats.parse_skips}/{stats.file_count} "
                 f"({skip_ratio:.1%} of files failed to parse). Check logs for details."
             )
+    
+    # Flush stderr to ensure warnings are captured even if process is killed
+    import sys
+    sys.stderr.flush()
 
 
 def _run_index(
@@ -988,6 +1011,12 @@ def app(
     standalone_mode: bool = True,
 ) -> None:
     """Console entrypoint; rewrites bare project paths to `index`."""
+    import sys
+    import atexit
+    
+    # Ensure stderr is flushed even if process is killed
+    atexit.register(lambda: sys.stderr.flush())
+    
     if args is None:
         normalized = prepend_index_if_needed(sys.argv[1:])
         sys.argv = [sys.argv[0], *normalized]

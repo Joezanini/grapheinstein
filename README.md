@@ -130,6 +130,43 @@ If you're rebuilding graphs from upstream git repositories (e.g., in CI or with 
 - For transient failures (network, rate limits), implement retry logic with exponential backoff
 - For permanent failures (404, auth errors), log and skip the repository
 
+### Empty stderr in automation
+
+If grapheinstein fails but produces no stderr output (seen in some CI/automation environments):
+
+This can happen when:
+- Process is killed externally (OOM, timeout) before stderr is flushed
+- Stderr is not captured correctly by the calling process
+- Buffering issues in subprocess invocation
+
+**Debugging steps:**
+
+1. Enable debug logging to a file:
+```bash
+export GRAPHEINSTEIN_DEBUG_LOG=/tmp/grapheinstein-debug.log
+grapheinstein index /path/to/project
+```
+
+2. Check if the process completes:
+```bash
+timeout 300 grapheinstein index /path/to/project -o graph.json
+echo "Exit code: $?"
+```
+
+3. Ensure stderr is flushed in Python subprocess calls:
+```python
+result = subprocess.run(
+    ["grapheinstein", "index", repo_path, "-o", "graph.json"],
+    capture_output=True,
+    text=True,
+    timeout=300,
+)
+# Check both exit code and stderr
+if result.returncode != 0 or not result.stderr:
+    # Possible silent failure
+    pass
+```
+
 ## Validation
 
 ```bash
