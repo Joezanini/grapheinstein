@@ -240,11 +240,23 @@ def _make_progress(show_progress: bool, total: int, description: str = "Indexing
 
 
 def _check_deadline(deadline: float | None, phase: str) -> None:
-    if deadline is not None and time.monotonic() > deadline:
-        raise IndexTimeoutError(
-            f"Indexing timed out during {phase}",
-            phase=phase,
-        )
+    if deadline is not None:
+        remaining = deadline - time.monotonic()
+        if remaining < 0:
+            raise IndexTimeoutError(
+                f"Indexing timed out during {phase}",
+                phase=phase,
+            )
+        # Warn when 20% or less time remaining (but only log once per phase)
+        if remaining > 0 and not hasattr(_check_deadline, f"_warned_{phase}"):
+            total_budget = getattr(_check_deadline, "_budget", None)
+            if total_budget and remaining < total_budget * 0.2:
+                logger.warning(
+                    "Approaching timeout: {:.1f}s remaining in phase '{}'",
+                    remaining,
+                    phase,
+                )
+                setattr(_check_deadline, f"_warned_{phase}", True)
 
 
 def build_inventory_graph(
@@ -320,6 +332,11 @@ def build_inventory_graph(
     )
     policy = (large_repo_policy or DEFAULT_LARGE_REPO_POLICY).lower()
     deadline = time.monotonic() + timeout if timeout > 0 else None
+    
+    # Store budget for timeout warning calculation
+    if deadline is not None:
+        _check_deadline._budget = timeout  # type: ignore[attr-defined]
+    
     phase = "discovery"
 
     cache: CacheStore | None = None

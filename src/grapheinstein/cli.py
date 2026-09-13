@@ -118,9 +118,28 @@ def prepend_index_if_needed(args: list[str]) -> list[str]:
 
 
 def _fail(message: str, code: int = 1) -> None:
-    from rich.markup import escape
-
-    console.print(f"[red]Error:[/red] {escape(message)}")
+    import sys
+    import os
+    
+    try:
+        from rich.markup import escape
+        console.print(f"[red]Error:[/red] {escape(message)}")
+    except Exception:
+        # Fallback if Rich fails - print to raw stderr
+        print(f"Error: {message}", file=sys.stderr)
+    
+    # Also write to diagnostic log if GRAPHEINSTEIN_DEBUG_LOG is set
+    debug_log = os.environ.get("GRAPHEINSTEIN_DEBUG_LOG")
+    if debug_log:
+        try:
+            with open(debug_log, "a") as f:
+                f.write(f"ERROR (exit {code}): {message}\n")
+                f.flush()
+        except Exception:
+            pass
+    
+    # Explicitly flush stderr to ensure message is captured even if process is killed
+    sys.stderr.flush()
     raise typer.Exit(code)
 
 
@@ -159,6 +178,40 @@ def _print_index_summary(stats, output_path: Path) -> None:
         table.add_row("Cache recovered", str(stats.cache_corrupt_recovered))
     table.add_row("Output", str(output_path))
     console.print(table)
+
+    # Warn about sparse or empty graphs
+    entity_count = (
+        stats.function_count
+        + stats.class_count
+        + stats.method_count
+        + stats.heading_count
+        + stats.media_text_count
+        + stats.concept_count
+    )
+    if stats.total_nodes < 2:
+        console.print(
+            "[yellow]Warning:[/yellow] Graph is empty (only root directory). "
+            "This may indicate all files were ignored or project path is empty."
+        )
+    elif entity_count == 0 and stats.file_count > 0:
+        console.print(
+            f"[yellow]Warning:[/yellow] Graph has {stats.file_count} files but no extracted "
+            "entities (functions, classes, headings, etc). This may indicate parse failures "
+            "or unsupported file types."
+        )
+
+    # Warn about high skip ratio
+    if stats.file_count > 0 and stats.parse_skips > 0:
+        skip_ratio = stats.parse_skips / stats.file_count
+        if skip_ratio > 0.5:
+            console.print(
+                f"[yellow]Warning:[/yellow] High parse skip ratio: {stats.parse_skips}/{stats.file_count} "
+                f"({skip_ratio:.1%} of files failed to parse). Check logs for details."
+            )
+    
+    # Flush stderr to ensure warnings are captured even if process is killed
+    import sys
+    sys.stderr.flush()
 
 
 def _run_index(
@@ -205,19 +258,21 @@ def _run_index(
     except IndexTimeoutError as exc:
         _fail(str(exc), 3)
     except ConfigError as exc:
-        _fail(str(exc), 1)
+        _fail(f"Configuration error: {exc}", 1)
     except MediaExtrasError as exc:
-        _fail(str(exc), 1)
+        _fail(f"Media processing error: {exc}", 1)
     except GraphError as exc:
-        _fail(str(exc), 1)
+        _fail(f"Graph validation error: {exc}", 1)
     except FileNotFoundError as exc:
-        _fail(str(exc), 1)
+        _fail(f"File not found: {exc}", 1)
     except NotADirectoryError as exc:
-        _fail(str(exc), 1)
-    except OSError as exc:
-        _fail(str(exc), 1)
+        _fail(f"Not a directory: {exc}", 1)
+    except (OSError, IOError) as exc:
+        # OSError/IOError typically indicate filesystem/network issues that may be transient
+        _fail(f"I/O error (may be transient): {exc}", 1)
     except Exception as exc:  # noqa: BLE001
-        _fail(f"Indexing failed: {exc}", 1)
+        # Last resort: log the exception type to aid debugging
+        _fail(f"Unexpected error ({type(exc).__name__}): {exc}", 1)
 
     _print_index_summary(result.stats, result.output_path)
 
@@ -956,6 +1011,12 @@ def app(
     standalone_mode: bool = True,
 ) -> None:
     """Console entrypoint; rewrites bare project paths to `index`."""
+    import sys
+    import atexit
+    
+    # Ensure stderr is flushed even if process is killed
+    atexit.register(lambda: sys.stderr.flush())
+    
     if args is None:
         normalized = prepend_index_if_needed(sys.argv[1:])
         sys.argv = [sys.argv[0], *normalized]
