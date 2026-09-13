@@ -80,6 +80,56 @@ Key settings (see `grapheinstein init` for a full commented template):
 
 Re-indexing an unchanged project reuses the cache under `cache_dir` for faster runs.
 
+## Troubleshooting
+
+### Empty or sparse graphs
+
+If indexing succeeds but produces an empty or nearly-empty graph:
+
+- **Check warnings in output**: Grapheinstein warns when no entities are extracted or when many files fail to parse
+- **Common causes**:
+  - All files matched by `.gitignore` or `ignored_patterns`
+  - Files are too large (exceed `max_file_size`, default 10 MiB)
+  - Unsupported file types or encoding issues (non-UTF-8)
+  - Parse failures (check logs at `INFO` or `DEBUG` level)
+
+### High parse skip ratio
+
+When many files fail to parse, grapheinstein logs warnings and reports skip counts in the summary. Common causes:
+
+- Non-code files in the project (binaries, images, data files) — use `.gitignore` or `ignored_patterns` to exclude them
+- Syntax errors in source files (especially in actively developed code)
+- Unsupported language features or dialects
+
+### Timeouts
+
+Indexing large repositories may exceed the default timeout (disabled by default). To configure:
+
+```yaml
+# In ~/.grapheinstein/config.yaml or custom config
+timeout_seconds: 300  # 5 minutes
+```
+
+Grapheinstein checks the timeout at phase boundaries (discovery, inventory, preflight, references, parsing, enrichment) and warns when 80% of the budget is consumed. Note that timeout is a cooperative limit — long-running individual operations (like parsing a huge file) may exceed it.
+
+### Exit codes
+
+- **0**: Success (graph created, even if empty or sparse)
+- **1**: General error (config, I/O, parse validation, etc.)
+- **2**: Large repository rejected (use `--allow-large-repo` to bypass advisory limits)
+- **3**: Timeout exceeded
+
+Error messages indicate the category (e.g., "Configuration error", "I/O error (may be transient)") to help distinguish permanent failures from transient issues like network or filesystem errors.
+
+### Upstream git clone failures
+
+If you're rebuilding graphs from upstream git repositories (e.g., in CI or with Librarian):
+
+- Ensure git is installed and accessible
+- Check network connectivity and authentication
+- For transient failures (network, rate limits), implement retry logic with exponential backoff
+- For permanent failures (404, auth errors), log and skip the repository
+
 ## Validation
 
 ```bash
