@@ -5,6 +5,13 @@ All notable changes to grapheinstein will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-09-14
+
+### Added
+- Structured `<output>.failure.json` sidecar with exit_code, error_category, message, and failure_details
+- Stable large-repo preflight failure codes with metrics vs thresholds and suggested flags
+- Operator guidance in `docs/large-repo-catalog-guidance.md`
+
 ## [Unreleased]
 
 ### Added
