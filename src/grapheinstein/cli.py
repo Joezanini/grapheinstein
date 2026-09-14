@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.table import Table
@@ -117,17 +118,24 @@ def prepend_index_if_needed(args: list[str]) -> list[str]:
     return args
 
 
-def _fail(message: str, code: int = 1) -> None:
-    import sys
+def _fail(
+    message: str,
+    code: int = 1,
+    *,
+    output_path: Path | None = None,
+    error_category: str | None = None,
+    failure_details: dict[str, Any] | None = None,
+) -> None:
     import os
-    
+    import sys
+
     try:
         from rich.markup import escape
         console.print(f"[red]Error:[/red] {escape(message)}")
     except Exception:
         # Fallback if Rich fails - print to raw stderr
         print(f"Error: {message}", file=sys.stderr)
-    
+
     # Also write to diagnostic log if GRAPHEINSTEIN_DEBUG_LOG is set
     debug_log = os.environ.get("GRAPHEINSTEIN_DEBUG_LOG")
     if debug_log:
@@ -137,7 +145,21 @@ def _fail(message: str, code: int = 1) -> None:
                 f.flush()
         except Exception:
             pass
-    
+
+    # Write structured failure info if output path is provided
+    if output_path is not None:
+        from grapheinstein.utils import write_failure_info
+        try:
+            write_failure_info(
+                output_path,
+                exit_code=code,
+                error_message=message,
+                error_category=error_category,
+                failure_details=failure_details,
+            )
+        except Exception:
+            pass
+
     # Explicitly flush stderr to ensure message is captured even if process is killed
     sys.stderr.flush()
     raise typer.Exit(code)
@@ -208,7 +230,7 @@ def _print_index_summary(stats, output_path: Path) -> None:
                 f"[yellow]Warning:[/yellow] High parse skip ratio: {stats.parse_skips}/{stats.file_count} "
                 f"({skip_ratio:.1%} of files failed to parse). Check logs for details."
             )
-    
+
     # Flush stderr to ensure warnings are captured even if process is killed
     import sys
     sys.stderr.flush()
@@ -233,6 +255,17 @@ def _run_index(
     include_generated_docs: bool = False,
     allow_large_repo: bool = False,
 ) -> None:
+    # Pre-determine output path for failure reporting
+    output_path = output if output is not None else Path("graph.json")
+    try:
+        cfg = load_config(
+            config_path=Path(config).expanduser() if config is not None else None,
+            output_override=output,
+        )
+        output_path = Path(cfg.output)
+    except ConfigError:
+        pass  # Will be caught again below
+
     try:
         result = api_index(
             project_path,
@@ -254,25 +287,73 @@ def _run_index(
             show_progress=sys.stderr.isatty(),
         )
     except LargeRepoError as exc:
-        _fail(str(exc), 2)
+        _fail(
+            str(exc),
+            2,
+            output_path=output_path,
+            error_category="large_repo",
+            failure_details=getattr(exc, "failure_details", None),
+        )
     except IndexTimeoutError as exc:
-        _fail(str(exc), 3)
+        _fail(
+            str(exc),
+            3,
+            output_path=output_path,
+            error_category="timeout",
+            failure_details={"phase": getattr(exc, "phase", "unknown")},
+        )
     except ConfigError as exc:
-        _fail(f"Configuration error: {exc}", 1)
+        _fail(
+            f"Configuration error: {exc}",
+            1,
+            output_path=output_path,
+            error_category="config",
+        )
     except MediaExtrasError as exc:
-        _fail(f"Media processing error: {exc}", 1)
+        _fail(
+            f"Media processing error: {exc}",
+            1,
+            output_path=output_path,
+            error_category="media",
+        )
     except GraphError as exc:
-        _fail(f"Graph validation error: {exc}", 1)
+        _fail(
+            f"Graph validation error: {exc}",
+            1,
+            output_path=output_path,
+            error_category="graph_validation",
+        )
     except FileNotFoundError as exc:
-        _fail(f"File not found: {exc}", 1)
+        _fail(
+            f"File not found: {exc}",
+            1,
+            output_path=output_path,
+            error_category="file_not_found",
+        )
     except NotADirectoryError as exc:
-        _fail(f"Not a directory: {exc}", 1)
-    except (OSError, IOError) as exc:
+        _fail(
+            f"Not a directory: {exc}",
+            1,
+            output_path=output_path,
+            error_category="not_a_directory",
+        )
+    except OSError as exc:
         # OSError/IOError typically indicate filesystem/network issues that may be transient
-        _fail(f"I/O error (may be transient): {exc}", 1)
+        _fail(
+            f"I/O error (may be transient): {exc}",
+            1,
+            output_path=output_path,
+            error_category="io_error",
+        )
     except Exception as exc:  # noqa: BLE001
         # Last resort: log the exception type to aid debugging
-        _fail(f"Unexpected error ({type(exc).__name__}): {exc}", 1)
+        _fail(
+            f"Unexpected error ({type(exc).__name__}): {exc}",
+            1,
+            output_path=output_path,
+            error_category="unexpected",
+            failure_details={"exception_type": type(exc).__name__},
+        )
 
     _print_index_summary(result.stats, result.output_path)
 
@@ -1011,12 +1092,12 @@ def app(
     standalone_mode: bool = True,
 ) -> None:
     """Console entrypoint; rewrites bare project paths to `index`."""
-    import sys
     import atexit
-    
+    import sys
+
     # Ensure stderr is flushed even if process is killed
     atexit.register(lambda: sys.stderr.flush())
-    
+
     if args is None:
         normalized = prepend_index_if_needed(sys.argv[1:])
         sys.argv = [sys.argv[0], *normalized]

@@ -145,9 +145,51 @@ def enforce_large_repo_gates(
         "add ignored_patterns, or pass --allow-large-repo to bypass advisory scan-cost "
         "gates (hard byte/file caps still apply)."
     )
+
+    # Build structured failure details
+    failure_codes = []
+    for gate in tripped:
+        if "max_non_code_share" in gate:
+            failure_codes.append("large_repo_preflight_max_non_code_share")
+        elif "max_reference_scan_ops" in gate:
+            failure_codes.append("large_repo_preflight_max_reference_scan_ops")
+        elif "max_total_bytes" in gate:
+            failure_codes.append("large_repo_preflight_max_total_bytes")
+        elif "max_file_count" in gate:
+            failure_codes.append("large_repo_preflight_max_file_count")
+
+    failure_details = {
+        "failure_codes": failure_codes,
+        "tripped_gates": list(tripped),
+        "metrics": {
+            "total_bytes": estimate.total_bytes,
+            "file_count": estimate.file_count,
+            "estimated_scan_ops": estimate.estimated_scan_ops,
+            "non_code_share": round(estimate.non_code_share, 3),
+        },
+        "thresholds": {
+            "max_total_bytes": max_total_bytes,
+            "max_file_count": max_file_count,
+            "max_reference_scan_ops": max_reference_scan_ops,
+            "max_non_code_share": max_non_code_share,
+        },
+        "suggested_flags": [],
+    }
+
+    # Add context-aware suggestions
+    if any("non_code_share" in gate for gate in tripped):
+        failure_details["suggested_flags"].append("--code-only")
+    if any("scan_ops" in gate for gate in tripped):
+        failure_details["suggested_flags"].extend(
+            ["--code-only", "narrow project path", "add ignored_patterns"]
+        )
+    if not failure_details["suggested_flags"]:
+        failure_details["suggested_flags"].append("--allow-large-repo")
+
     raise LargeRepoError(
         "Large-repo preflight rejected this index: "
         + "; ".join(tripped)
         + f". {remedies}",
         tripped_gates=tuple(tripped),
+        failure_details=failure_details,
     )

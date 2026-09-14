@@ -134,7 +134,6 @@ def test_timeout_raises_index_timeout(tmp_path: Path, monkeypatch: pytest.Monkey
     # start deadline = monotonic() + timeout → if we patch after start it's hard.
     # Instead set timeout_seconds=1 and patch monotonic to jump forward mid-run.
     calls = {"n": 0}
-    real_mono = 0.0
 
     def fake_mono():
         calls["n"] += 1

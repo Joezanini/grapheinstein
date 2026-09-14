@@ -1,8 +1,6 @@
 """Test empty and sparse graph detection warnings."""
 
-from pathlib import Path
 
-import pytest
 
 from grapheinstein.core.graph import GraphStats
 
@@ -34,7 +32,7 @@ def test_empty_graph_warning_detection():
         project_root="/tmp/project",
         graph_path="/tmp/graph.json",
     )
-    
+
     # This graph should trigger empty warning
     assert stats.total_nodes < 2
     assert stats.file_count == 0
@@ -67,7 +65,7 @@ def test_sparse_graph_detection():
         project_root="/tmp/project",
         graph_path="/tmp/graph.json",
     )
-    
+
     # This graph should trigger sparse warning (files but no entities)
     entity_count = (
         stats.function_count
@@ -108,7 +106,7 @@ def test_high_skip_ratio_detection():
         project_root="/tmp/project",
         graph_path="/tmp/graph.json",
     )
-    
+
     # This graph should trigger high skip warning
     skip_ratio = stats.parse_skips / stats.file_count
     assert skip_ratio > 0.5, "Skip ratio should be > 50%"
@@ -141,7 +139,7 @@ def test_healthy_graph_no_warnings():
         project_root="/tmp/project",
         graph_path="/tmp/graph.json",
     )
-    
+
     # This healthy graph should not trigger warnings
     assert stats.total_nodes >= 2
     entity_count = (
