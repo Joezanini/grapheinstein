@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Structured failure output via `<output>.failure.json` sidecar files for machine-readable error reporting
+- Detailed failure information for large-repo preflight rejections including:
+  - Stable failure codes (e.g., `large_repo_preflight_max_non_code_share`)
+  - Actual metrics vs thresholds (non_code_share, estimated_scan_ops, etc.)
+  - Context-aware suggested flags (e.g., `--code-only`)
+- Error category tagging for all CLI failures (large_repo, timeout, config, io_error, etc.)
+- Documentation for library catalog indexing with large-repo threshold recommendations
+
+### Changed
+- `LargeRepoError` now includes structured `failure_details` dictionary
+- CLI `_fail` function accepts optional output path and failure details for structured output
+- All index error handlers now write structured failure info when available
+
 ## [0.2.1] - 2026-09-13
 
 ### Added

@@ -117,9 +117,16 @@ class ConfigError(Exception):
 class LargeRepoError(Exception):
     """Raised when large-repo preflight rejects an index run."""
 
-    def __init__(self, message: str, *, tripped_gates: tuple[str, ...] = ()) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        tripped_gates: tuple[str, ...] = (),
+        failure_details: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.tripped_gates = tripped_gates
+        self.failure_details = failure_details or {}
 
 
 class IndexTimeoutError(Exception):
@@ -786,6 +793,42 @@ output: "{DEFAULT_OUTPUT}"
 # Diagnostic log verbosity: DEBUG, INFO, WARNING, ERROR.
 log_level: "{DEFAULT_LOG_LEVEL}"
 """
+
+
+def write_failure_info(
+    output_path: Path,
+    *,
+    exit_code: int,
+    error_message: str,
+    error_category: str | None = None,
+    failure_details: dict[str, Any] | None = None,
+) -> Path:
+    """
+    Write structured failure information to a sidecar JSON file.
+
+    Creates <output_path>.failure.json with machine-readable failure data.
+    """
+    from datetime import UTC, datetime
+    import json
+
+    failure_file = output_path.with_suffix(output_path.suffix + ".failure.json")
+    failure_info = {
+        "success": False,
+        "exit_code": exit_code,
+        "error_message": error_message,
+        "error_category": error_category or "unknown",
+        "timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    if failure_details:
+        failure_info["details"] = failure_details
+
+    try:
+        failure_file.write_text(json.dumps(failure_info, indent=2), encoding="utf-8")
+        logger.debug("Wrote failure info to {}", failure_file)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not write failure info to {}: {}", failure_file, exc)
+
+    return failure_file
 
 
 def write_config_template(path: Path, *, force: bool = False) -> Path:

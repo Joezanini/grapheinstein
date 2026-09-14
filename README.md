@@ -130,6 +130,44 @@ If you're rebuilding graphs from upstream git repositories (e.g., in CI or with 
 - For transient failures (network, rate limits), implement retry logic with exponential backoff
 - For permanent failures (404, auth errors), log and skip the repository
 
+### Large-repo preflight failures
+
+When indexing a catalog of diverse repositories (e.g., for a library directory), some repos may trip advisory large-repo gates:
+
+**Exit code 2 scenarios:**
+- `max_non_code_share` (default 0.85): repo has >85% non-code files
+- `max_reference_scan_ops` (default 5M): estimated reference scan operations exceed threshold
+
+**For library catalogs with SDK/docs-heavy repos:**
+
+1. Use `--code-only` flag to exclude docs/discovery_cache by default:
+   ```bash
+   grapheinstein index /path/to/repo --code-only -o graph.json
+   ```
+
+2. Or adjust thresholds in config for catalog-friendly defaults:
+   ```yaml
+   # ~/.grapheinstein/config.yaml
+   max_non_code_share: 0.90  # Allow up to 90% non-code
+   max_reference_scan_ops: 10000000  # 10M ops
+   ```
+
+3. Or bypass advisory gates per-repo (hard caps still apply):
+   ```bash
+   grapheinstein index /path/to/repo --allow-large-repo -o graph.json
+   ```
+
+**Structured failure output:**
+
+When indexing fails with exit code 2, grapheinstein writes `<output>.failure.json` with:
+- `exit_code`, `error_category`, `error_message`
+- `details.failure_codes` (e.g., `large_repo_preflight_max_non_code_share`)
+- `details.metrics` (actual values: `non_code_share`, `estimated_scan_ops`, etc.)
+- `details.thresholds` (configured limits)
+- `details.suggested_flags` (e.g., `--code-only`)
+
+Automation scripts can parse this file instead of scraping stderr.
+
 ### Empty stderr in automation
 
 If grapheinstein fails but produces no stderr output (seen in some CI/automation environments):
@@ -153,7 +191,15 @@ timeout 300 grapheinstein index /path/to/project -o graph.json
 echo "Exit code: $?"
 ```
 
-3. Ensure stderr is flushed in Python subprocess calls:
+3. Check for structured failure output:
+```bash
+# If graph.json write was attempted, check graph.json.failure.json
+if [ -f graph.json.failure.json ]; then
+  cat graph.json.failure.json
+fi
+```
+
+4. Ensure stderr is flushed in Python subprocess calls:
 ```python
 result = subprocess.run(
     ["grapheinstein", "index", repo_path, "-o", "graph.json"],
@@ -161,10 +207,14 @@ result = subprocess.run(
     text=True,
     timeout=300,
 )
-# Check both exit code and stderr
-if result.returncode != 0 or not result.stderr:
-    # Possible silent failure
-    pass
+# Check both exit code and structured failure output
+if result.returncode != 0:
+    failure_file = Path("graph.json.failure.json")
+    if failure_file.exists():
+        failure_info = json.loads(failure_file.read_text())
+        # Parse structured failure details
+        print(f"Category: {failure_info['error_category']}")
+        print(f"Details: {failure_info.get('details', {})}")
 ```
 
 ## Validation
