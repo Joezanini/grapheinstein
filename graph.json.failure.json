@@ -1,0 +1,7 @@
+{
+  "success": false,
+  "exit_code": 1,
+  "error_message": "File not found: Project path does not exist: /nonexistent/path/for/grapheinstein",
+  "error_category": "file_not_found",
+  "timestamp": "2026-09-14T15:13:07Z"
+}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.table import Table
@@ -125,16 +126,16 @@ def _fail(
     error_category: str | None = None,
     failure_details: dict[str, Any] | None = None,
 ) -> None:
-    import sys
     import os
-    
+    import sys
+
     try:
         from rich.markup import escape
         console.print(f"[red]Error:[/red] {escape(message)}")
     except Exception:
         # Fallback if Rich fails - print to raw stderr
         print(f"Error: {message}", file=sys.stderr)
-    
+
     # Also write to diagnostic log if GRAPHEINSTEIN_DEBUG_LOG is set
     debug_log = os.environ.get("GRAPHEINSTEIN_DEBUG_LOG")
     if debug_log:
@@ -144,7 +145,7 @@ def _fail(
                 f.flush()
         except Exception:
             pass
-    
+
     # Write structured failure info if output path is provided
     if output_path is not None:
         from grapheinstein.utils import write_failure_info
@@ -158,7 +159,7 @@ def _fail(
             )
         except Exception:
             pass
-    
+
     # Explicitly flush stderr to ensure message is captured even if process is killed
     sys.stderr.flush()
     raise typer.Exit(code)
@@ -229,7 +230,7 @@ def _print_index_summary(stats, output_path: Path) -> None:
                 f"[yellow]Warning:[/yellow] High parse skip ratio: {stats.parse_skips}/{stats.file_count} "
                 f"({skip_ratio:.1%} of files failed to parse). Check logs for details."
             )
-    
+
     # Flush stderr to ensure warnings are captured even if process is killed
     import sys
     sys.stderr.flush()
@@ -336,7 +337,7 @@ def _run_index(
             output_path=output_path,
             error_category="not_a_directory",
         )
-    except (OSError, IOError) as exc:
+    except OSError as exc:
         # OSError/IOError typically indicate filesystem/network issues that may be transient
         _fail(
             f"I/O error (may be transient): {exc}",
@@ -1091,12 +1092,12 @@ def app(
     standalone_mode: bool = True,
 ) -> None:
     """Console entrypoint; rewrites bare project paths to `index`."""
-    import sys
     import atexit
-    
+    import sys
+
     # Ensure stderr is flushed even if process is killed
     atexit.register(lambda: sys.stderr.flush())
-    
+
     if args is None:
         normalized = prepend_index_if_needed(sys.argv[1:])
         sys.argv = [sys.argv[0], *normalized]

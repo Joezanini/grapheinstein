@@ -808,8 +808,8 @@ def write_failure_info(
 
     Creates <output_path>.failure.json with machine-readable failure data.
     """
-    from datetime import UTC, datetime
     import json
+    from datetime import UTC, datetime
 
     failure_file = output_path.with_suffix(output_path.suffix + ".failure.json")
     failure_info = {

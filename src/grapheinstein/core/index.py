@@ -332,11 +332,11 @@ def build_inventory_graph(
     )
     policy = (large_repo_policy or DEFAULT_LARGE_REPO_POLICY).lower()
     deadline = time.monotonic() + timeout if timeout > 0 else None
-    
+
     # Store budget for timeout warning calculation
     if deadline is not None:
         _check_deadline._budget = timeout  # type: ignore[attr-defined]
-    
+
     phase = "discovery"
 
     cache: CacheStore | None = None
