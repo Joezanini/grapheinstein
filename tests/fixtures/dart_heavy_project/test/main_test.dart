@@ -1,0 +1,3 @@
+void testMain() {
+  // test
+}

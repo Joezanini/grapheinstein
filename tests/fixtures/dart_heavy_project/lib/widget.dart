@@ -1,0 +1,3 @@
+class MyWidget {
+  void build() {}
+}
