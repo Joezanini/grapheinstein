@@ -5,6 +5,16 @@ All notable changes to grapheinstein will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-10-15
+
+### Added
+- Dart language support: classes, mixins, extensions, enums, functions, methods, constructors, imports/exports, and part files
+- Monorepo subfolder indexing: index any subdirectory of a repository (e.g., `packages/my_package/` in a Flutter monorepo)
+- Dart repos are no longer rejected as mostly non-code when Dart is enabled in languages
+
+### Changed
+- `tree-sitter-dart>=0.1` is now a required dependency
+
 ## [0.2.2] - 2026-09-14
 
 ### Added

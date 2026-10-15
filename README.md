@@ -73,12 +73,46 @@ Key settings (see `grapheinstein init` for a full commented template):
 | Key | Purpose |
 |-----|---------|
 | `ignored_patterns` | Extra gitignore-style paths beyond `.gitignore` |
+| `languages` | Enabled languages (default: all supported) |
 | `embedding_model` | Local model for embeddings |
 | `llm_model` | Local model for enrichment / answers |
 | `max_file_size` | Skip parsing files larger than this (bytes; default 10 MiB) |
 | `cache_dir` | Local cache for ASTs / chunks / embeddings (default `~/.grapheinstein/cache`) |
 
+Supported languages: **Python, JavaScript, TypeScript, Java, Go, Rust, C++, SQL, Dart**
+
 Re-indexing an unchanged project reuses the cache under `cache_dir` for faster runs.
+
+## Dart Language Support
+
+Grapheinstein extracts the following Dart entities:
+- Classes, mixins, extensions, enums
+- Top-level functions
+- Methods, constructors (including named constructors)
+- Imports, exports, and part directives
+
+Example:
+```bash
+# Index a Flutter package
+grapheinstein /path/to/flutter_package --languages dart -o flutter_graph.json
+
+# Index a monorepo subfolder (e.g., packages/my_package in flutter/packages)
+grapheinstein /path/to/monorepo/packages/my_package --languages dart -o graph.json
+```
+
+## Monorepo Subfolder Indexing
+
+You can index any subdirectory of a repository. This is useful for monorepos where you want to analyze a single package:
+
+```bash
+# Index a specific package in a Flutter monorepo
+grapheinstein /path/to/flutter/packages/go_router --languages dart -o go_router.json
+
+# Index a workspace package
+grapheinstein /path/to/monorepo/packages/my-lib -o my-lib.json
+```
+
+The graph will be scoped to the subfolder - only files within that directory are included.
 
 ## Troubleshooting
 

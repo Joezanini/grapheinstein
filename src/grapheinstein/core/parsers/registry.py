@@ -18,6 +18,7 @@ CANONICAL_LANGUAGES = (
     "rust",
     "cpp",
     "sql",
+    "dart",
 )
 
 DEFAULT_LANGUAGES: tuple[str, ...] = CANONICAL_LANGUAGES
@@ -42,6 +43,7 @@ EXTENSION_MAP: dict[str, str] = {
     ".hh": "cpp",
     ".h": "cpp",
     ".sql": "sql",
+    ".dart": "dart",
 }
 
 
@@ -138,6 +140,10 @@ def _load_language(language_id: str) -> LanguageSpec:
         import tree_sitter_sql as tssql
 
         return LanguageSpec(language_id, Language(tssql.language()))
+    if language_id == "dart":
+        import tree_sitter_dart as tsdart
+
+        return LanguageSpec(language_id, Language(tsdart.language()))
     raise LanguageError(f"Unsupported language: {language_id}")
 
 

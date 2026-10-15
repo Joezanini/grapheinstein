@@ -134,6 +134,36 @@ QUERIES: dict[str, str] = {
   (object_reference
     (identifier) @function.name)) @function.def
 """,
+    "dart": """
+(function_signature
+  name: (identifier) @function.name) @function.def
+
+(class_definition
+  name: (identifier) @class.name) @class.def
+
+(class_body
+  (method_signature
+    (function_signature
+      name: (identifier) @method.name)) @method.def)
+
+(class_body
+  (method_signature
+    (constructor_signature
+      name: (identifier) @method.name)) @method.def)
+
+(mixin_declaration
+  (identifier) @class.name) @class.def
+
+(extension_declaration
+  (identifier) @class.name) @class.def
+
+(enum_declaration
+  (identifier) @class.name) @class.def
+
+(import_or_export) @import
+(part_directive) @import
+(part_of_directive) @import
+""",
 }
 
 
