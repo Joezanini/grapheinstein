@@ -16,12 +16,12 @@ def test_index_full_monorepo():
     )
     assert result.output_path.exists()
     artifact = result.artifact
-    
+
     node_ids = [n["id"] for n in artifact["nodes"]]
     assert any("root.py" in n for n in node_ids)
     assert any("package_a/main.py" in n for n in node_ids)
     assert any("package_b/main.py" in n for n in node_ids)
-    
+
     result.output_path.unlink()
 
 
@@ -36,10 +36,10 @@ def test_index_subfolder_only():
     )
     assert result.output_path.exists()
     artifact = result.artifact
-    
+
     node_ids = [n["id"] for n in artifact["nodes"]]
     assert any("main.py" in n for n in node_ids)
     assert not any("root.py" in n for n in node_ids)
     assert not any("package_b" in n for n in node_ids)
-    
+
     result.output_path.unlink()

@@ -22,7 +22,7 @@ def test_extract_dart_advanced():
     path = FIXTURE / "advanced.dart"
     result = extract_file(path, "dart", file_id="advanced.dart")
     assert not result.skipped
-    
+
     kinds = {(e.kind, e.name) for e in result.entities}
     assert ("class", "MyMixin") in kinds
     assert ("method", "mixinMethod") in kinds
@@ -34,7 +34,7 @@ def test_extract_dart_advanced():
     assert ("method", "setValue") in kinds
     assert ("method", "getValue") in kinds
     assert ("function", "callSomeFunction") in kinds
-    
+
     assert result.imports
     assert any("flutter/material.dart" in i.raw for i in result.imports)
     assert any("dart:async" in i.raw for i in result.imports)
@@ -46,9 +46,9 @@ def test_extract_dart_part_file():
     path = FIXTURE / "part_file.dart"
     result = extract_file(path, "dart", file_id="part_file.dart")
     assert not result.skipped
-    
+
     kinds = {(e.kind, e.name) for e in result.entities}
     assert ("function", "partFunction") in kinds
-    
+
     assert result.imports
     assert any("part of" in i.raw for i in result.imports)

@@ -19,10 +19,10 @@ def test_dart_repo_not_rejected(tmp_path: Path):
     )
     assert result.exit_code == 0, result.stdout + result.stderr
     assert out.exists()
-    
+
     data = json.loads(out.read_text(encoding="utf-8"))
     node_ids = {n["id"] for n in data["nodes"]}
-    
+
     assert any("main.dart" in nid for nid in node_ids)
     assert any("widget.dart" in nid for nid in node_ids)
     assert any("test.dart" in nid for nid in node_ids)
