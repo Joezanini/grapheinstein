@@ -51,6 +51,9 @@ class IndexBody(BaseModel):
     max_total_bytes: int | None = None
     max_file_count: int | None = None
     timeout_seconds: int | None = None
+    snippets: bool | None = None
+    snippet_max_lines: int | None = None
+    snippet_max_bytes: int | None = None
 
 
 class QueryBody(BaseModel):
@@ -137,6 +140,9 @@ def build_app() -> FastAPI:
                     max_total_bytes=body.max_total_bytes,
                     max_file_count=body.max_file_count,
                     timeout_seconds=body.timeout_seconds,
+                    snippets=body.snippets,
+                    snippet_max_lines=body.snippet_max_lines,
+                    snippet_max_bytes=body.snippet_max_bytes,
                     show_progress=False,
                 )
             except Exception as exc:  # noqa: BLE001

@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 from tree_sitter import Node, Query, QueryCursor
 
 from grapheinstein.core.parsers.queries import get_query
 from grapheinstein.core.parsers.registry import get_parser_for_file
+from grapheinstein.core.parsers.signatures import SnippetSettings, attach_signature
 
 
 @dataclass
@@ -19,6 +21,12 @@ class CodeEntity:
     start_line: int
     end_line: int | None = None
     parent_class: str | None = None
+    signature: str | None = None
+    parameters: list[dict[str, Any]] | None = None
+    return_type: str | None = None
+    signature_truncated: bool = False
+    snippet: str | None = None
+    snippet_truncated: bool = False
 
 
 @dataclass
@@ -133,9 +141,40 @@ def _parse_generic_import(node: Node, source: bytes) -> ImportFact:
     return fact
 
 
-def extract_file(file_path: Path, language_id: str, *, file_id: str) -> ExtractResult:
+def _covering_def(def_nodes: list[Node] | None, name_node: Node) -> Node | None:
+    for def_node in def_nodes or []:
+        if def_node.start_byte <= name_node.start_byte <= def_node.end_byte:
+            return def_node
+    return None
+
+
+def _capture_signature(
+    entity: CodeEntity,
+    def_node: Node | None,
+    source: bytes,
+    language_id: str,
+    settings: SnippetSettings,
+    file_id: str,
+) -> None:
+    attach_signature(
+        entity,
+        def_node,
+        source,
+        language_id,
+        settings,
+        file_id=file_id,
+    )
+
+
+def extract_file(
+    file_path: Path,
+    language_id: str,
+    *,
+    file_id: str,
+    snippet_settings: SnippetSettings | None = None,
+) -> ExtractResult:
     """Extract entities/facts from one source file. Never raises for parse issues."""
-    _ = file_id  # reserved for future qualified names
+    settings = snippet_settings or SnippetSettings()
     result = ExtractResult()
     try:
         raw = file_path.read_bytes()
@@ -195,9 +234,16 @@ def extract_file(file_path: Path, language_id: str, *, file_id: str) -> ExtractR
                         end = d.end_point[0] + 1
                         class_spans.append((d.start_byte, d.end_byte, name))
                         break
-                result.entities.append(
-                    CodeEntity(kind="class", name=name, start_line=start, end_line=end)
+                entity = CodeEntity(kind="class", name=name, start_line=start, end_line=end)
+                _capture_signature(
+                    entity,
+                    _covering_def(def_nodes, node),
+                    source_bytes,
+                    language_id,
+                    settings,
+                    file_id,
                 )
+                result.entities.append(entity)
 
         if "function.name" in captures:
             for node in captures["function.name"]:
@@ -217,9 +263,18 @@ def extract_file(file_path: Path, language_id: str, *, file_id: str) -> ExtractR
                 for start_b, end_b, cname in class_spans:
                     # Will fill on second pass if needed
                     _ = (start_b, end_b, cname)
-                result.entities.append(
-                    CodeEntity(kind=kind, name=name, start_line=start, end_line=end, parent_class=parent)
+                entity = CodeEntity(
+                    kind=kind, name=name, start_line=start, end_line=end, parent_class=parent
                 )
+                _capture_signature(
+                    entity,
+                    _covering_def(captures.get("function.def"), node),
+                    source_bytes,
+                    language_id,
+                    settings,
+                    file_id,
+                )
+                result.entities.append(entity)
 
         if "method.name" in captures:
             for node in captures["method.name"]:
@@ -235,15 +290,22 @@ def extract_file(file_path: Path, language_id: str, *, file_id: str) -> ExtractR
                     if start_b <= node.start_byte <= end_b:
                         parent = cname
                         break
-                result.entities.append(
-                    CodeEntity(
-                        kind="method",
-                        name=name,
-                        start_line=start,
-                        end_line=end,
-                        parent_class=parent,
-                    )
+                entity = CodeEntity(
+                    kind="method",
+                    name=name,
+                    start_line=start,
+                    end_line=end,
+                    parent_class=parent,
                 )
+                _capture_signature(
+                    entity,
+                    _covering_def(captures.get("method.def"), node),
+                    source_bytes,
+                    language_id,
+                    settings,
+                    file_id,
+                )
+                result.entities.append(entity)
 
         if "import" in captures:
             for node in captures["import"]:
@@ -275,13 +337,7 @@ def extract_file(file_path: Path, language_id: str, *, file_id: str) -> ExtractR
                 # Find byte position approximately via line — re-check against class entities
                 for other in result.entities:
                     if other.kind == "class" and other.end_line and other.start_line <= ent.start_line <= other.end_line:
-                        ent = CodeEntity(
-                            kind="method",
-                            name=ent.name,
-                            start_line=ent.start_line,
-                            end_line=ent.end_line,
-                            parent_class=other.name,
-                        )
+                        ent = replace(ent, kind="method", parent_class=other.name)
                         break
             revised.append(ent)
         # Dedupe method duplicates

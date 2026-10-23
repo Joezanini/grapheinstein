@@ -30,6 +30,11 @@ from grapheinstein.core.parsers.media_ocr import (
     merge_media_ocr,
 )
 from grapheinstein.core.parsers.pdf import merge_pdf_structure
+from grapheinstein.core.parsers.signatures import (
+    DEFAULT_SNIPPET_MAX_BYTES,
+    DEFAULT_SNIPPET_MAX_LINES,
+    SnippetSettings,
+)
 from grapheinstein.core.preflight import (
     compute_scan_cost_estimate,
     enforce_large_repo_gates,
@@ -44,6 +49,7 @@ from grapheinstein.utils import (
     DEFAULT_MAX_REFERENCE_SCAN_OPS,
     DEFAULT_MAX_TOTAL_BYTES,
     DEFAULT_TIMEOUT_SECONDS,
+    ConfigError,
     IndexTimeoutError,
     effective_ignored_patterns,
     resolve_project_path,
@@ -290,6 +296,9 @@ def build_inventory_graph(
     max_file_count: int | None = None,
     timeout_seconds: int | None = None,
     large_repo_policy: str | None = None,
+    snippets: bool = True,
+    snippet_max_lines: int = DEFAULT_SNIPPET_MAX_LINES,
+    snippet_max_bytes: int = DEFAULT_SNIPPET_MAX_BYTES,
 ):
     from grapheinstein.core.parsers.llm_enrich import (
         DEFAULT_CONFIDENCE_THRESHOLD,
@@ -302,6 +311,20 @@ def build_inventory_graph(
     )
 
     root = resolve_project_path(project_root)
+    if (
+        snippet_max_lines < 1
+        or snippet_max_lines > DEFAULT_SNIPPET_MAX_LINES
+        or snippet_max_bytes < 1
+        or snippet_max_bytes > DEFAULT_SNIPPET_MAX_BYTES
+    ):
+        raise ConfigError(
+            "snippet_max_lines must be 1-40 and snippet_max_bytes must be 1-2048"
+        )
+    snippet_settings = SnippetSettings(
+        enabled=bool(snippets),
+        max_lines=int(snippet_max_lines),
+        max_bytes=int(snippet_max_bytes),
+    )
     if transcribe_media and not skip_media_deps_check:
         ensure_media_deps()
 
@@ -423,7 +446,9 @@ def build_inventory_graph(
     _check_deadline(deadline, phase)
     progress2 = _make_progress(show_progress, 1, "Parsing structure")
     with progress2:
-        skips = merge_code_structure(graph, root, enabled, cache=cache)
+        skips = merge_code_structure(
+            graph, root, enabled, cache=cache, snippet_settings=snippet_settings
+        )
         progress2.advance()
     graph.graph["languages"] = list(enabled)
     graph.graph["include_docs"] = bool(include_docs)
@@ -520,6 +545,9 @@ def index_project(
     max_file_count: int | None = None,
     timeout_seconds: int | None = None,
     large_repo_policy: str | None = None,
+    snippets: bool = True,
+    snippet_max_lines: int = DEFAULT_SNIPPET_MAX_LINES,
+    snippet_max_bytes: int = DEFAULT_SNIPPET_MAX_BYTES,
 ):
     """Index project and write graph.json artifact. Returns (path, stats)."""
     root = resolve_project_path(project_root)
@@ -553,6 +581,9 @@ def index_project(
         max_file_count=max_file_count,
         timeout_seconds=timeout_seconds,
         large_repo_policy=large_repo_policy,
+        snippets=snippets,
+        snippet_max_lines=snippet_max_lines,
+        snippet_max_bytes=snippet_max_bytes,
     )
     written = save_graph(graph, output_path, compress=compress, versioned=versioned)
     artifact = to_artifact_dict(graph)

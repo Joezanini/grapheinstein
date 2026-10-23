@@ -29,11 +29,12 @@ from grapheinstein.core.parsers.extract import (
     extract_file,
 )
 from grapheinstein.core.parsers.registry import language_for_path
+from grapheinstein.core.parsers.signatures import SnippetSettings
 
 if TYPE_CHECKING:
     from grapheinstein.core.cache import CacheStore
 
-_AST_PARSER_VERSION = "tree-sitter-v1"
+_AST_PARSER_VERSION = "tree-sitter-v2"
 
 
 def _module_to_candidates(module: str, source_file: str, language: str) -> list[str]:
@@ -163,6 +164,12 @@ def apply_entities(
             start_line=ent.start_line,
             language=language,
             end_line=ent.end_line,
+            signature=ent.signature,
+            parameters=ent.parameters,
+            return_type=ent.return_type,
+            signature_truncated=ent.signature_truncated,
+            snippet=ent.snippet,
+            snippet_truncated=ent.snippet_truncated,
         )
         class_ids[ent.name] = nid
         add_defines_edge(graph, file_id, nid)
@@ -180,6 +187,12 @@ def apply_entities(
             language=language,
             end_line=ent.end_line,
             qualified_name=f"{ent.parent_class}.{ent.name}" if ent.parent_class else None,
+            signature=ent.signature,
+            parameters=ent.parameters,
+            return_type=ent.return_type,
+            signature_truncated=ent.signature_truncated,
+            snippet=ent.snippet,
+            snippet_truncated=ent.snippet_truncated,
         )
         add_defines_edge(graph, file_id, nid)
         if ent.kind == "method" and ent.parent_class and ent.parent_class in class_ids:
@@ -222,18 +235,30 @@ def _extract_file_cached(
     *,
     file_id: str,
     cache: CacheStore | None,
+    snippet_settings: SnippetSettings,
 ) -> ExtractResult:
     if cache is None:
-        return extract_file(path, lang, file_id=file_id)
+        return extract_file(
+            path, lang, file_id=file_id, snippet_settings=snippet_settings
+        )
 
     try:
         raw = path.read_bytes()
     except OSError:
-        return extract_file(path, lang, file_id=file_id)
+        return extract_file(
+            path, lang, file_id=file_id, snippet_settings=snippet_settings
+        )
 
     content_hash = content_hash_bytes(raw)
     settings = settings_hash(
-        {"kind": KIND_AST, "language": lang, "parser": _AST_PARSER_VERSION}
+        {
+            "kind": KIND_AST,
+            "language": lang,
+            "parser": _AST_PARSER_VERSION,
+            "snippets": snippet_settings.enabled,
+            "snippet_max_lines": snippet_settings.max_lines,
+            "snippet_max_bytes": snippet_settings.max_bytes,
+        }
     )
     cached = cache.get(KIND_AST, file_id, content_hash, settings)
     if cached is not None:
@@ -242,7 +267,7 @@ def _extract_file_cached(
         except Exception as exc:  # noqa: BLE001
             logger.warning("AST cache payload for {} failed to load: {}", file_id, exc)
 
-    result = extract_file(path, lang, file_id=file_id)
+    result = extract_file(path, lang, file_id=file_id, snippet_settings=snippet_settings)
     try:
         cache.put(KIND_AST, file_id, content_hash, settings, pickle_dumps(result))
     except Exception as exc:  # noqa: BLE001
@@ -255,11 +280,13 @@ def merge_code_structure(
     project_root: Path,
     enabled_languages: list[str],
     cache: CacheStore | None = None,
+    snippet_settings: SnippetSettings | None = None,
 ) -> int:
     """
     Walk file nodes, extract structure for enabled languages, merge into graph.
     Returns number of skipped files.
     """
+    settings = snippet_settings or SnippetSettings()
     skips = 0
     file_nodes = [
         nid
@@ -276,7 +303,13 @@ def merge_code_structure(
             continue
         path = project_root / file_id
         try:
-            result = _extract_file_cached(path, lang, file_id=file_id, cache=cache)
+            result = _extract_file_cached(
+                path,
+                lang,
+                file_id=file_id,
+                cache=cache,
+                snippet_settings=settings,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Structure extract failed for {}: {}", file_id, exc)
             skips += 1
