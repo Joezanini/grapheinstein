@@ -78,8 +78,29 @@ Key settings (see `grapheinstein init` for a full commented template):
 | `llm_model` | Local model for enrichment / answers |
 | `max_file_size` | Skip parsing files larger than this (bytes; default 10 MiB) |
 | `cache_dir` | Local cache for ASTs / chunks / embeddings (default `~/.grapheinstein/cache`) |
+| `snippets` | Store a short source excerpt on function, method, and class nodes (default `true`) |
+| `snippet_max_lines` | Excerpt line cap, 1–40 (default 40) |
+| `snippet_max_bytes` | Excerpt size cap in bytes, 1–2048 (default 2048) |
 
 Supported languages: **Python, JavaScript, TypeScript, Java, Go, Rust, C++, SQL, Dart**
+
+## Signatures and snippets
+
+For Python, JavaScript, TypeScript, and Dart, function and method nodes can include:
+
+- `signature` — the declaration in source order, including overloads when present
+- `parameters` — each parameter's `name`, declared `type` (only when the source writes one), `kind` (`positional`, `named`, `rest`, or `keywords`), and `required`
+- `return_type` — only when the source declares one
+- `snippet` and `snippet_truncated` — verbatim text from an attached decorator or annotation through the body
+
+Class nodes include `signature` (the declaration line) and the same snippet fields. They do not include a parameter list. Graph `schema_version` stays `6.0.0`. Older graphs that omit these keys remain valid.
+
+```bash
+grapheinstein index . -o graph.json --no-snippets
+grapheinstein index . -o graph.json --snippet-max-lines 10 --snippet-max-bytes 512
+```
+
+Snippets are never stored for a file whose name is `.env` or `.env.*`, contains `secret`, `credential`, or `password`, ends in `.pem` or `.key`, or is `id_rsa`. Signatures on those files are unchanged. Caps cannot be set above 40 lines or 2048 bytes.
 
 Re-indexing an unchanged project reuses the cache under `cache_dir` for faster runs.
 

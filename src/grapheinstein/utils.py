@@ -18,6 +18,10 @@ from grapheinstein.core.parsers.registry import (
     LanguageError,
     validate_languages,
 )
+from grapheinstein.core.parsers.signatures import (
+    DEFAULT_SNIPPET_MAX_BYTES,
+    DEFAULT_SNIPPET_MAX_LINES,
+)
 
 DEFAULT_OUTPUT = "graph.json"
 DEFAULT_LOG_LEVEL = "INFO"
@@ -108,6 +112,9 @@ class AppConfig:
     max_file_count: int = DEFAULT_MAX_FILE_COUNT
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
     large_repo_policy: str = DEFAULT_LARGE_REPO_POLICY
+    snippets: bool = True
+    snippet_max_lines: int = DEFAULT_SNIPPET_MAX_LINES
+    snippet_max_bytes: int = DEFAULT_SNIPPET_MAX_BYTES
 
 
 class ConfigError(Exception):
@@ -289,6 +296,9 @@ def _coerce_config(raw: dict[str, Any], *, source: Path | None) -> dict[str, Any
         "max_file_count",
         "timeout_seconds",
         "large_repo_policy",
+        "snippets",
+        "snippet_max_lines",
+        "snippet_max_bytes",
     }
     unknown = set(raw) - known
     for key in sorted(unknown):
@@ -460,7 +470,31 @@ def _coerce_config(raw: dict[str, Any], *, source: Path | None) -> dict[str, Any
                 f"Config key 'large_repo_policy' must be 'reject' or 'allow' ({source})"
             )
         result["large_repo_policy"] = policy
+    if "snippets" in raw:
+        result["snippets"] = _coerce_bool(raw["snippets"], key="snippets", source=source)
+    if "snippet_max_lines" in raw:
+        result["snippet_max_lines"] = _coerce_snippet_limit(
+            raw["snippet_max_lines"],
+            key="snippet_max_lines",
+            upper=DEFAULT_SNIPPET_MAX_LINES,
+            source=source,
+        )
+    if "snippet_max_bytes" in raw:
+        result["snippet_max_bytes"] = _coerce_snippet_limit(
+            raw["snippet_max_bytes"],
+            key="snippet_max_bytes",
+            upper=DEFAULT_SNIPPET_MAX_BYTES,
+            source=source,
+        )
     return result
+
+
+def _coerce_snippet_limit(raw: Any, *, key: str, upper: int, source: Path | None) -> int:
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise ConfigError(f"Config key {key!r} must be an integer ({source})")
+    if raw < 1 or raw > upper:
+        raise ConfigError(f"Config key {key!r} must be between 1 and {upper} ({source})")
+    return raw
 
 
 def load_config(
@@ -495,6 +529,9 @@ def load_config(
     max_total_bytes_override: int | None = None,
     max_file_count_override: int | None = None,
     timeout_seconds_override: int | None = None,
+    snippets_override: bool | None = None,
+    snippet_max_lines_override: int | None = None,
+    snippet_max_bytes_override: int | None = None,
     user_config_path: Path | None = None,
 ) -> AppConfig:
     """
@@ -536,6 +573,9 @@ def load_config(
         "max_file_count": DEFAULT_MAX_FILE_COUNT,
         "timeout_seconds": DEFAULT_TIMEOUT_SECONDS,
         "large_repo_policy": DEFAULT_LARGE_REPO_POLICY,
+        "snippets": True,
+        "snippet_max_lines": DEFAULT_SNIPPET_MAX_LINES,
+        "snippet_max_bytes": DEFAULT_SNIPPET_MAX_BYTES,
     }
 
     default_user = user_config_path if user_config_path is not None else USER_CONFIG_PATH
@@ -689,6 +729,22 @@ def load_config(
         if timeout_seconds_override < 0:
             raise ConfigError("timeout_seconds must be >= 0")
         merged["timeout_seconds"] = int(timeout_seconds_override)
+    if snippets_override is not None:
+        merged["snippets"] = bool(snippets_override)
+    if snippet_max_lines_override is not None:
+        merged["snippet_max_lines"] = _coerce_snippet_limit(
+            snippet_max_lines_override,
+            key="snippet_max_lines",
+            upper=DEFAULT_SNIPPET_MAX_LINES,
+            source=None,
+        )
+    if snippet_max_bytes_override is not None:
+        merged["snippet_max_bytes"] = _coerce_snippet_limit(
+            snippet_max_bytes_override,
+            key="snippet_max_bytes",
+            upper=DEFAULT_SNIPPET_MAX_BYTES,
+            source=None,
+        )
 
     cache_dir_path = Path(str(merged["cache_dir"])).expanduser()
     try:
@@ -731,6 +787,9 @@ def load_config(
         max_file_count=int(merged["max_file_count"]),
         timeout_seconds=int(merged["timeout_seconds"]),
         large_repo_policy=str(merged["large_repo_policy"]),
+        snippets=bool(merged["snippets"]),
+        snippet_max_lines=int(merged["snippet_max_lines"]),
+        snippet_max_bytes=int(merged["snippet_max_bytes"]),
     )
 
 
@@ -783,6 +842,14 @@ cache_dir: "{DEFAULT_CACHE_DIR}"
 
 # Cooperative index timeout in seconds (0 disables).
 # timeout_seconds: {DEFAULT_TIMEOUT_SECONDS}
+
+# Store a short source excerpt on function, method, and class nodes.
+# Set to false to keep signatures but omit excerpts.
+# snippets: true
+
+# Excerpt caps. Cannot exceed 40 lines or 2048 bytes.
+# snippet_max_lines: {DEFAULT_SNIPPET_MAX_LINES}
+# snippet_max_bytes: {DEFAULT_SNIPPET_MAX_BYTES}
 
 # reject | allow — allow bypasses advisory scan-ops / non-code-share gates only.
 # large_repo_policy: "{DEFAULT_LARGE_REPO_POLICY}"

@@ -80,11 +80,27 @@ Errors look like:
 
 Advanced: `--host 0.0.0.0` binds beyond loopback **without authentication** — only on trusted networks.
 
+## Code entity signatures and snippets
+
+Index results for Python, JavaScript, TypeScript, and Dart may add optional metadata on `function`, `method`, and `class` nodes. `schema_version` stays `6.0.0`. Missing keys mean "not captured".
+
+| Key | Nodes | Meaning |
+|-----|--------|---------|
+| `signature` | function, method, class | Readable declaration. Class nodes are the declaration line only. |
+| `parameters` | function, method | Ordered `{name, type?, kind, required}`. `kind` is `positional`, `named`, `rest`, or `keywords`. |
+| `return_type` | function, method | Declared return type text. Omitted when the source has none. |
+| `signature_truncated` | function, method | Present and `true` only when the signature payload was cut at 2048 bytes. |
+| `snippet` | function, method, class | Verbatim excerpt, at most 40 lines and 2048 bytes by default. |
+| `snippet_truncated` | same as `snippet` | `true` when the excerpt was cut. |
+
+Explain, path, and query views that return these nodes keep the metadata. Turn excerpts off with `index(..., snippets=False)`, CLI `--no-snippets`, or `POST /index` field `"snippets": false`. `snippet_max_lines` and `snippet_max_bytes` accept 1–40 and 1–2048. Secret-pattern file names (`.env`, `.env.*`, `secret`, `credential`, `password`, `.pem`, `.key`, `id_rsa`) do not receive `snippet`.
+
 ## Parity
 
 | Action | CLI | Python | HTTP |
 |--------|-----|--------|------|
 | Index project | `grapheinstein index DIR -o graph.json` | `index(DIR, output=…)` | `POST /index` |
+| Skip snippets | `--no-snippets` | `index(..., snippets=False)` | `{"snippets": false}` |
 | Query graph | `grapheinstein query Q -i g -o s` | `query(Q, input=…, output=…)` | `POST /query` |
 
 For the same inputs, Python and CLI query produce the same `hit_ids` evidence set.

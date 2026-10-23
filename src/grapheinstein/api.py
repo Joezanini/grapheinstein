@@ -106,6 +106,9 @@ def index(
     max_total_bytes: int | None = None,
     max_file_count: int | None = None,
     timeout_seconds: int | None = None,
+    snippets: bool | None = None,
+    snippet_max_lines: int | None = None,
+    snippet_max_bytes: int | None = None,
 ) -> IndexResult:
     """
     Index a project folder into a portable graph (CLI `index` semantics).
@@ -133,6 +136,9 @@ def index(
         max_total_bytes_override=max_total_bytes,
         max_file_count_override=max_file_count,
         timeout_seconds_override=timeout_seconds,
+        snippets_override=snippets,
+        snippet_max_lines_override=snippet_max_lines,
+        snippet_max_bytes_override=snippet_max_bytes,
     )
     setup_logging(cfg.log_level)
     output_path = Path(cfg.output)
@@ -164,6 +170,9 @@ def index(
         max_file_count=cfg.max_file_count,
         timeout_seconds=cfg.timeout_seconds,
         large_repo_policy=cfg.large_repo_policy,
+        snippets=cfg.snippets,
+        snippet_max_lines=cfg.snippet_max_lines,
+        snippet_max_bytes=cfg.snippet_max_bytes,
     )
 
     artifact: dict[str, Any] | None = None

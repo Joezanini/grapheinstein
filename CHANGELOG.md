@@ -5,6 +5,16 @@ All notable changes to grapheinstein will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-10-23
+
+### Added
+- Optional signatures and source snippets on function, method, and class nodes for Python, JavaScript, TypeScript, and Dart (`signature`, `parameters`, `return_type`, `snippet`, `snippet_truncated`, and `signature_truncated` when the signature payload is cut)
+- Config keys `snippets`, `snippet_max_lines`, and `snippet_max_bytes`, and index flags `--no-snippets`, `--snippet-max-lines`, and `--snippet-max-bytes` (defaults 40 lines and 2048 bytes; higher values are rejected)
+- Snippet capture skips secret-pattern file names (`.env`, `.env.*`, names containing `secret`, `credential`, or `password`, `.pem`, `.key`, and `id_rsa`)
+
+### Changed
+- Package version is 0.4.0. Graph `schema_version` stays `6.0.0`; the new node fields are optional, so previously indexed graphs remain valid
+
 ## [0.3.0] - 2026-10-15
 
 ### Added

@@ -91,6 +91,8 @@ _OPTS_WITH_VALUE = frozenset(
         "--k",
         "--max-file-size",
         "--cache-dir",
+        "--snippet-max-lines",
+        "--snippet-max-bytes",
     }
 )
 
@@ -254,6 +256,9 @@ def _run_index(
     code_only: bool = False,
     include_generated_docs: bool = False,
     allow_large_repo: bool = False,
+    no_snippets: bool = False,
+    snippet_max_lines: int | None = None,
+    snippet_max_bytes: int | None = None,
 ) -> None:
     # Pre-determine output path for failure reporting
     output_path = output if output is not None else Path("graph.json")
@@ -284,6 +289,9 @@ def _run_index(
             code_only=code_only,
             include_generated_docs=include_generated_docs,
             allow_large_repo=allow_large_repo,
+            snippets=False if no_snippets else None,
+            snippet_max_lines=snippet_max_lines,
+            snippet_max_bytes=snippet_max_bytes,
             show_progress=sys.stderr.isatty(),
         )
     except LargeRepoError as exc:
@@ -479,6 +487,21 @@ def index_cmd(
         "--allow-large-repo",
         help="Bypass advisory scan-cost / non-code-share gates (hard caps still apply)",
     ),
+    no_snippets: bool = typer.Option(
+        False,
+        "--no-snippets",
+        help="Do not store source snippets on code entities (signatures are still stored)",
+    ),
+    snippet_max_lines: int | None = typer.Option(
+        None,
+        "--snippet-max-lines",
+        help="Maximum snippet lines (1-40, default 40)",
+    ),
+    snippet_max_bytes: int | None = typer.Option(
+        None,
+        "--snippet-max-bytes",
+        help="Maximum snippet size in bytes (1-2048, default 2048)",
+    ),
     config: Path | None = typer.Option(
         None,
         "--config",
@@ -503,6 +526,9 @@ def index_cmd(
         code_only=code_only,
         include_generated_docs=include_generated_docs,
         allow_large_repo=allow_large_repo,
+        no_snippets=no_snippets,
+        snippet_max_lines=snippet_max_lines,
+        snippet_max_bytes=snippet_max_bytes,
     )
 
 

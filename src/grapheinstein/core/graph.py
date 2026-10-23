@@ -135,6 +135,12 @@ def add_code_entity(
     language: str,
     end_line: int | None = None,
     qualified_name: str | None = None,
+    signature: str | None = None,
+    parameters: list[dict[str, Any]] | None = None,
+    return_type: str | None = None,
+    signature_truncated: bool = False,
+    snippet: str | None = None,
+    snippet_truncated: bool = False,
 ) -> str:
     """Add a function/class/method node. Returns node id."""
     if kind not in CODE_NODE_TYPES:
@@ -150,6 +156,17 @@ def add_code_entity(
         metadata["end_line"] = int(end_line)
     if qualified_name:
         metadata["qualified_name"] = qualified_name
+    if signature:
+        metadata["signature"] = signature
+    if parameters is not None:
+        metadata["parameters"] = parameters
+    if return_type:
+        metadata["return_type"] = return_type
+    if signature_truncated:
+        metadata["signature_truncated"] = True
+    if snippet is not None:
+        metadata["snippet"] = snippet
+        metadata["snippet_truncated"] = bool(snippet_truncated)
     if node_id not in graph:
         add_node(graph, node_id, kind, metadata=metadata)
     return node_id
@@ -728,6 +745,64 @@ def _validate_code_metadata(node: dict[str, Any], path: Path) -> None:
         raise GraphError(
             f"Graph file {path} code entity start_line must be a positive integer"
         )
+    _validate_optional_signature(meta, path, node)
+
+
+_PARAMETER_KINDS = frozenset({"positional", "named", "rest", "keywords"})
+_SNIPPET_MAX_LINES = 40
+_SNIPPET_MAX_BYTES = 2048
+
+
+def _validate_optional_signature(meta: dict[str, Any], path: Path, node: dict[str, Any]) -> None:
+    """Optional signature/snippet keys. Absence is valid. Malformed values are not."""
+    label = node.get("id")
+    for key in ("signature", "return_type"):
+        if key in meta and not isinstance(meta[key], str):
+            raise GraphError(f"Graph file {path} code entity {label!r} {key} must be a string")
+    if "signature_truncated" in meta and not isinstance(meta["signature_truncated"], bool):
+        raise GraphError(
+            f"Graph file {path} code entity {label!r} signature_truncated must be a boolean"
+        )
+    parameters = meta.get("parameters") if "parameters" in meta else None
+    if "parameters" in meta:
+        if not isinstance(parameters, list):
+            raise GraphError(
+                f"Graph file {path} code entity {label!r} parameters must be a list"
+            )
+        for item in parameters:
+            if not isinstance(item, dict):
+                raise GraphError(
+                    f"Graph file {path} code entity {label!r} parameter must be an object"
+                )
+            name = item.get("name")
+            if not isinstance(name, str) or not name:
+                raise GraphError(
+                    f"Graph file {path} code entity {label!r} parameter name must be a string"
+                )
+            if item.get("kind") not in _PARAMETER_KINDS:
+                raise GraphError(
+                    f"Graph file {path} code entity {label!r} parameter kind is invalid"
+                )
+            if not isinstance(item.get("required"), bool):
+                raise GraphError(
+                    f"Graph file {path} code entity {label!r} parameter required must be a boolean"
+                )
+            if "type" in item and (not isinstance(item["type"], str) or not item["type"]):
+                raise GraphError(
+                    f"Graph file {path} code entity {label!r} parameter type must be a string"
+                )
+    if "snippet" in meta:
+        snippet = meta["snippet"]
+        if not isinstance(snippet, str):
+            raise GraphError(f"Graph file {path} code entity {label!r} snippet must be a string")
+        if not isinstance(meta.get("snippet_truncated"), bool):
+            raise GraphError(
+                f"Graph file {path} code entity {label!r} snippet_truncated must be a boolean"
+            )
+        if len(snippet.splitlines()) > _SNIPPET_MAX_LINES or len(snippet.encode("utf-8")) > _SNIPPET_MAX_BYTES:
+            raise GraphError(
+                f"Graph file {path} code entity {label!r} snippet exceeds the size cap"
+            )
 
 
 def _validate_heading_metadata(node: dict[str, Any], path: Path) -> None:
